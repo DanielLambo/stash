@@ -76,6 +76,15 @@ function setStatus(text, kind = "ok") {
 // fetch, no probe, no ping. Sync health is observed via the cached
 // `clipboard_last_sync_error` flag the service worker writes after
 // each round-trip the user already opted into.
+// Internal source tags ("current", "manual", etc.) are storage-layer
+// labels and meaningless to the user — hide them from the UI. Real
+// page hostnames pass through unchanged.
+const INTERNAL_SOURCES = new Set(["current", "manual", "page", ""]);
+function displaySource(src) {
+  if (!src) return null;
+  return INTERNAL_SOURCES.has(src) ? null : src;
+}
+
 function statusFromLocalState() {
   if (!state.settings?.enabled) return "Paused";
   if (state.vault?.setup && state.vault?.unlocked) return "Ready · Vault unlocked";
@@ -208,11 +217,12 @@ function renderCard(item, index) {
   const time = document.createElement("span");
   time.textContent = timeAgo(item.ts);
   row2.appendChild(time);
-  if (item.source) {
+  const displaySrc = displaySource(item.source);
+  if (displaySrc) {
     row2.appendChild(dot());
     const src = document.createElement("span");
     src.className = "src";
-    src.textContent = item.source;
+    src.textContent = displaySrc;
     row2.appendChild(src);
   }
   body.appendChild(row1);
@@ -516,7 +526,8 @@ function openModal(item) {
     image: "var(--type-image)",
   };
   $("#modal-type").innerHTML = `<span class="dot" style="background:${dotColors[cat.type]}"></span> ${cat.label}`;
-  $("#modal-meta").textContent = `${timeAgo(item.ts)}${item.source ? " · " + item.source : ""}`;
+  const dsrc = displaySource(item.source);
+  $("#modal-meta").textContent = `${timeAgo(item.ts)}${dsrc ? " · " + dsrc : ""}`;
   renderModalBody(item, cat);
   modal.classList.remove("hidden");
 
