@@ -1,5 +1,5 @@
 import {
-  getItems, getSettings, removeItem, togglePin, clearAll,
+  getItems, setItems, getSettings, removeItem, togglePin, clearAll,
   addItem, updateItem,
 } from "../lib/storage.js";
 import { categorize, timeAgo, summarize } from "../lib/categorize.js";
@@ -142,11 +142,14 @@ function renderCard(item, index) {
   if (item.pinned) card.classList.add("pinned");
   if (cat.type === "code") card.classList.add("is-code");
 
-  // Vault treatment — replace icon with lock + blur the card body until
-  // the user reveals it. Sensitive-but-not-vaulted items just blur.
+  // Vault treatment — only items that are actually encrypted (have
+  // ciphertext on disk) get blurred until the user unlocks. A
+  // `sensitive` flag without `vaulted` means the item is stored as
+  // plaintext and there is nothing to "reveal" — blurring it would
+  // just hide its text needlessly. (Older builds set sensitive:true on
+  // plaintext items; the migration in init() clears those flags.)
   const isVaulted = !!item.vaulted;
-  const isSensitive = !!item.sensitive || isVaulted;
-  const isHidden = isSensitive && !state.decrypted.has(item.id);
+  const isHidden = isVaulted && !state.decrypted.has(item.id);
   if (isVaulted) card.classList.add("vaulted");
   if (isHidden) card.classList.add("hidden-content");
 
@@ -735,6 +738,26 @@ async function refresh() {
   render();
 }
 
+// Migration: older builds set `sensitive: true` on plaintext items
+// when the Vault wasn't configured. Those items have always been
+// stored as plaintext (the SW never had a key to encrypt with), so
+// the flag is purely a UI-blur signal — and blurring plaintext that
+// the user can't decrypt is broken UX. Clear the flag on any
+// non-vaulted item so they render normally.
+async function migrateOrphanedSensitiveFlags() {
+  const items = await getItems();
+  let changed = false;
+  const next = items.map(i => {
+    if (i.sensitive && !i.vaulted) {
+      changed = true;
+      const { sensitive, sensitiveKind, ...rest } = i;
+      return rest;
+    }
+    return i;
+  });
+  if (changed) await setItems(next);
+}
+
 async function decryptUnlockedVaultItems() {
   if (!(await vaultIsUnlocked())) return;
   let any = false;
@@ -751,6 +774,8 @@ async function decryptUnlockedVaultItems() {
 }
 
 async function init() {
+  // One-time clean-up of stale sensitive flags from older builds.
+  await migrateOrphanedSensitiveFlags();
   await refresh();
   state.vault.setup = await vaultIsSetup();
   state.vault.unlocked = await vaultIsUnlocked();
