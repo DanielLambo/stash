@@ -1,0 +1,5 @@
+node_modules/
+clipboard.db
+clipboard.db-wal
+clipboard.db-shm
+.env

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Stash</title>
+  <link rel="stylesheet" href="lib/theme.css" />
+  <style>
+    body {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+      background:
+        radial-gradient(1200px 500px at 100% -10%, var(--bg-grad-1), transparent 60%),
+        var(--bg);
+      line-height: 1.6;
+    }
+    .doc h1 {
+      font-size: 32px;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px;
+    }
+    .doc .stamp {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 28px;
+    }
+    .doc h2 {
+      font-size: 18px;
+      letter-spacing: -0.01em;
+      margin: 32px 0 8px;
+    }
+    .doc h3 { font-size: 15px; margin: 20px 0 4px; }
+    .doc p, .doc li { font-size: 14px; color: var(--text); }
+    .doc strong { font-weight: 600; }
+    .doc code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--pill-bg);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .doc table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      font-size: 13px;
+    }
+    .doc th, .doc td {
+      border-bottom: 1px solid var(--divider);
+      padding: 8px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .doc th {
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .pillbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .pillbar span {
+      background: var(--pill-bg);
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .pillbar .ok { color: var(--success); }
+    .pillbar .no { color: var(--danger); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <article class="doc">
+    <h1>Privacy Policy — Stash</h1>
+    <div class="stamp">Last updated: 26 April 2026</div>
+
+    <div class="pillbar">
+      <span class="ok">No analytics</span>
+      <span class="ok">No telemetry</span>
+      <span class="ok">No data sale</span>
+      <span class="ok">No remote code</span>
+      <span class="ok">Local-first</span>
+      <span class="no">No tracking</span>
+    </div>
+
+    <h2>The short version</h2>
+    <p>Stash runs on your device. Nothing is sent to the developer of Stash.
+    There is no Stash server. Stash makes no third-party network requests
+    of any kind — no analytics, telemetry, error reporting, font CDNs, or
+    favicon fetches. The only outgoing requests are to a sync server
+    <strong>you choose</strong>, only when you opt in.</p>
+
+    <h2>What Stash reads</h2>
+    <h3>Things you copy</h3>
+    <p>When you press Cmd+C / Ctrl+C, or right-click → Copy on a web page,
+    Stash records the result so you can paste it later. Capture is
+    event-driven; we do not poll.</p>
+
+    <h3>The system clipboard, on demand</h3>
+    <p>When you open the Stash popup or click its manual capture button,
+    Stash reads the system clipboard one time so it can record copies you
+    made in another app or on a restricted page.</p>
+
+    <h3>Trigger detection in an editable field — only if you turn on snippets</h3>
+    <p>Snippet expansion is a productivity feature that replaces a short
+    trigger you type (like <code>;sig</code>) with an expansion you've
+    written yourself. It is <strong>off by default</strong>. When you
+    enable it, Stash detects user-defined trigger sequences in the
+    editable field you're currently typing into and keeps a small
+    in-memory window of the most recent characters — sized to your
+    longest trigger. It compares the window's tail against the triggers
+    <em>you</em> defined. On a match, it replaces the trigger with
+    your expansion body.</p>
+    <p><strong>Stash does not log, store, or transmit what you type.</strong>
+    No keystroke ever leaves your device. The in-memory window is
+    wiped on focus change, paste, or any non-text-typing event.
+    Password fields are excluded.</p>
+
+    <h2>What Stash never does</h2>
+    <ul>
+      <li>No analytics, telemetry, crash reporters, or A/B testing.</li>
+      <li>No browsing-history tracking. We do not see which sites you visit.</li>
+      <li>No content scraping. We do not read page DOM, form fields, cookies,
+      <code>localStorage</code>, or request bodies.</li>
+      <li>No data sale. Ever.</li>
+      <li>No remote code. All JavaScript ships inside the extension package.</li>
+      <li>No ads, advertising IDs, or third-party trackers.</li>
+    </ul>
+
+    <h2>Where your data lives</h2>
+    <table>
+      <thead><tr><th>Storage area</th><th>What we put there</th><th>Lifetime</th></tr></thead>
+      <tbody>
+        <tr><td><code>chrome.storage.local</code></td><td>Clipboard items + snippet rules</td><td>Until you remove them or they roll off</td></tr>
+        <tr><td><code>chrome.storage.sync</code></td><td>Settings + Vault config (salt + verifier)</td><td>Until uninstall</td></tr>
+        <tr><td><code>chrome.storage.session</code></td><td>Vault unlock cache (in-memory only)</td><td>Cleared on browser exit</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Sensitive data — the Vault</h2>
+    <p>Each new clipboard item is checked locally against rules that
+    recognize things like API keys, JWTs, credit cards, SSNs, and
+    high-entropy secrets.</p>
+    <p>In every case, <strong>a sensitive copy never lands in storage
+    as plaintext</strong>:</p>
+    <ul>
+      <li><strong>Vault not set up:</strong> the copy is dropped and a
+      lock badge flashes on the toolbar. The popup invites you to set
+      up the Vault.</li>
+      <li><strong>Vault set up &amp; unlocked:</strong> the secret is
+      encrypted on your device before it's saved.</li>
+      <li><strong>Vault set up &amp; locked:</strong> the copy is
+      dropped and a lock badge flashes to alert you to unlock first.</li>
+    </ul>
+    <p>Encryption uses <strong>AES-GCM</strong>. Your master password is
+    never stored — we derive an encryption key from it using
+    <strong>PBKDF2-SHA256 with 600 000 iterations</strong>. If you forget
+    your master password, vaulted items cannot be recovered. There is no
+    backdoor.</p>
+
+    <h2>Optional cross-device sync</h2>
+    <p>Sync is <strong>off by default</strong> and Stash has no default
+    destination. When you turn it on, you provide a server URL — typically
+    one you run yourself. Vaulted items go over the wire only as
+    ciphertext.</p>
+
+    <h2>Outgoing network requests, full list</h2>
+    <p>Stash only makes outgoing requests via the optional sync feature,
+    which is off by default and points at a server <strong>you</strong>
+    provide. There are no other outgoing requests of any kind.</p>
+    <table>
+      <thead><tr><th>Trigger</th><th>Destination</th><th>What is sent</th></tr></thead>
+      <tbody>
+        <tr><td>You enable sync and type in your own server URL</td><td>The URL you typed</td><td>Items (vaulted ones sent only as ciphertext)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Your controls</h2>
+    <ul>
+      <li>Pause capture entirely.</li>
+      <li>Disable image capture.</li>
+      <li>Block specific domains.</li>
+      <li>Disable snippet expansion (off by default).</li>
+      <li>Lock the Vault at any time.</li>
+      <li>Export your history as JSON, or wipe everything.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>Stash is not directed at children under 13.</p>
+
+    <h2>Contact</h2>
+    <p>For questions or security disclosures, open an issue at
+    <a href="https://github.com/daniellambo/stash/issues" target="_blank" rel="noopener noreferrer">github.com/daniellambo/stash/issues</a>.</p>
+  </article>
+</body>
+</html>

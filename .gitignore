@@ -1,0 +1,28 @@
+# Build output (re-creatable via ./scripts/build.sh; attach to GitHub Releases instead)
+dist/
+
+# Local Claude Code state
+.claude/
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+
+# Sync server runtime artifacts
+server/clipboard.db
+server/clipboard.db-wal
+server/clipboard.db-shm
+server/.env
+
+# Python build artifacts (icon generator)
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
