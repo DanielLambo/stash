@@ -81,23 +81,23 @@
 
     <!-- Sync -->
     <section class="group">
-      <h2 class="group-title">Sync across devices</h2>
+      <h2 class="group-title">Sync across devices (optional)</h2>
       <div class="card-group glass">
         <div class="row">
           <div class="row-info">
             <div class="row-title">Enable sync</div>
-            <div class="row-sub">Push your history to a private server you control.</div>
+            <div class="row-sub">Off by default. When on, your history is sent to a server <strong>you provide</strong> — Stash has no default cloud destination.</div>
           </div>
           <label class="switch"><input type="checkbox" id="syncEnabled"><span class="slider"></span></label>
         </div>
-        <div class="row">
+        <div class="row sync-detail" hidden>
           <div class="row-info">
             <div class="row-title">Server URL</div>
-            <div class="row-sub">Default: <code>http://localhost:8787</code></div>
+            <div class="row-sub">Paste the URL of your sync server. If you're running the open-source server from the Stash repo locally, the typical address is <code>http://localhost:8787</code>.</div>
           </div>
           <input type="url" id="syncUrl" placeholder="http://localhost:8787" class="text-input" />
         </div>
-        <div class="row">
+        <div class="row sync-detail" hidden>
           <div class="row-info">
             <div class="row-title">Connection</div>
             <div class="row-sub" id="syncStatus">Not tested.</div>
@@ -107,7 +107,7 @@
             <button class="btn primary" id="syncNow">Sync now</button>
           </div>
         </div>
-        <div class="row">
+        <div class="row sync-detail" hidden>
           <div class="row-info">
             <div class="row-title">Device token</div>
             <div class="row-sub">Used for authentication. Reset to unlink this device.</div>

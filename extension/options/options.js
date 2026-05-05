@@ -34,6 +34,7 @@ async function load() {
   $("#showNotifications").checked = settings.showNotifications;
   $("#syncEnabled").checked = settings.syncEnabled;
   $("#syncUrl").value = settings.syncUrl || "";
+  toggleSyncDetail(settings.syncEnabled);
   $("#blocklist").value = (settings.blocklist || []).join("\n");
   $("#maxItems").value = settings.maxItems;
   $("#maxValue").textContent = settings.maxItems;
@@ -77,7 +78,17 @@ $("#enabled").addEventListener("change", e => update({ enabled: e.target.checked
 $("#captureImages").addEventListener("change", e => update({ captureImages: e.target.checked }));
 $("#capturePages").addEventListener("change", e => update({ capturePages: e.target.checked }));
 $("#showNotifications").addEventListener("change", e => update({ showNotifications: e.target.checked }));
-$("#syncEnabled").addEventListener("change", e => update({ syncEnabled: e.target.checked }));
+$("#syncEnabled").addEventListener("change", e => {
+  update({ syncEnabled: e.target.checked });
+  toggleSyncDetail(e.target.checked);
+});
+
+// Show the URL / Connection / Token rows only when sync is on, so the
+// default state (sync off) doesn't surface a localhost URL or imply
+// the extension talks to a server it actually doesn't.
+function toggleSyncDetail(on) {
+  document.querySelectorAll(".sync-detail").forEach(r => { r.hidden = !on; });
+}
 
 $("#syncUrl").addEventListener("change", e => {
   let v = e.target.value.trim();
