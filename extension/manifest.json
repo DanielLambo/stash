@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Stash — Smart Clipboard for Power Users",
   "short_name": "Stash",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Inline paste overlay, text expansion, smart actions, on-device encryption for secrets. Fully local — no third-party calls.",
   "homepage_url": "https://github.com/daniellambo/stash",
   "permissions": [

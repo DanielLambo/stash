@@ -7,7 +7,7 @@
 // Each action is independent. The popup decides which to render based on
 // categorize() type; this file owns the implementation of each.
 
-import { categorize } from "./categorize.js";
+import { categorize, trimUrlSurround } from "./categorize.js";
 
 // ─────────────────────────────────────────────────────────────────
 // URL transforms
@@ -245,7 +245,7 @@ function urlActions(item, cat) {
   // when the user clicked it; that was the only third-party endpoint
   // anywhere in the extension and it has been removed entirely. All
   // URL actions below operate purely on the local string — no fetch.
-  const url = item.text;
+  const url = cat.meta?.canonical || trimUrlSurround(item.text);
   return [
     { id: "open",     label: "Open",            run: (_, ctx) => { ctx.openTab(url); return { sideEffect: true }; } },
     { id: "markdown", label: "Copy as Markdown", run: (_, ctx) => ({ copy: urlToMarkdown(url, cat.meta?.host) }) },

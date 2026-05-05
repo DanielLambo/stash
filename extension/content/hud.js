@@ -33,6 +33,26 @@ const state = {
   query: "",
 };
 
+/** Mirrors popup type tokens so quick-paste rows match main UI semantics. */
+const TYPE_TAG_COLORS = {
+  text: "#8e8e93",
+  link: "#007aff",
+  email: "#ff9f0a",
+  phone: "#30d158",
+  color: "#af52de",
+  code: "#ff2d55",
+  image: "#5ac8fa",
+};
+
+let categorizeFn = null;
+async function ensureCategorize() {
+  if (!categorizeFn) {
+    const mod = await import(chrome.runtime.getURL("lib/categorize.js"));
+    categorizeFn = mod.categorize;
+  }
+  return categorizeFn;
+}
+
 const STYLES = `
   :host { all: initial; }
   *, *::before, *::after { box-sizing: border-box; }
@@ -143,8 +163,14 @@ const STYLES = `
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(120, 120, 128, 1);
+    font-weight: 600;
     flex-shrink: 0;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @media (prefers-color-scheme: dark) {
+    .row .tag { opacity: 0.95; }
   }
 
   .empty {
@@ -275,6 +301,13 @@ function renderList() {
     const single = (item.text || "").replace(/\s+/g, " ").slice(0, 240);
     txt.textContent = single;
     row.appendChild(txt);
+
+    const cat = categorizeFn ? categorizeFn(item) : { type: "text", label: "Text" };
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = cat.label;
+    tag.style.color = TYPE_TAG_COLORS[cat.type] || TYPE_TAG_COLORS.text;
+    row.appendChild(tag);
 
     row.addEventListener("mouseenter", () => setSelected(idx, false));
     row.addEventListener("mousedown", e => { e.preventDefault(); paste(idx); });
@@ -473,10 +506,16 @@ export async function open(target) {
   let items = [];
   try {
     const storage = await import(chrome.runtime.getURL("lib/storage.js"));
+    await ensureCategorize();
     const all = await storage.getItems();
     // The HUD only handles text. Images can't be pasted into a text field.
     // Vaulted items are skipped here; the popup is the place to unlock them.
-    items = all.filter(i => i.kind === "text" && !i.vaulted);
+    items = all
+      .filter(i => i.kind === "text" && !i.vaulted)
+      .sort((a, b) => {
+        if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+        return (b.ts || 0) - (a.ts || 0);
+      });
   } catch (e) {
     items = [];
   }

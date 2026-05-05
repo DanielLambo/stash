@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clipboard</title>
+  <title>Stash</title>
   <link rel="stylesheet" href="../lib/theme.css" />
   <link rel="stylesheet" href="popup.css" />
 </head>
@@ -21,8 +21,11 @@
           </svg>
         </div>
         <div class="hdr-title">
-          <div class="title">Clipboard</div>
-          <div class="subtitle" id="status">Ready</div>
+          <div class="title">Stash</div>
+          <div class="hdr-lines">
+            <span class="hdr-tagline">Clipboard history</span>
+            <div class="subtitle" id="status">Ready</div>
+          </div>
         </div>
       </div>
       <div class="hdr-right">
@@ -58,6 +61,7 @@
       <button class="pill" data-filter="text">Text</button>
       <button class="pill" data-filter="link">Links</button>
       <button class="pill" data-filter="image">Images</button>
+      <button class="pill" data-filter="color">Colors</button>
       <button class="pill" data-filter="code">Code</button>
       <button class="pill" data-filter="pinned">Pinned</button>
     </div>
@@ -76,8 +80,8 @@
           <line x1="16" y1="48" x2="32" y2="48" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.2"/>
         </svg>
       </div>
-      <div class="empty-title">Nothing copied yet</div>
-      <div class="empty-sub">Press ⌘C anywhere — your last <span id="empty-count">5</span> copies appear here.</div>
+      <div class="empty-title" id="empty-title">Nothing copied yet</div>
+      <div class="empty-sub" id="empty-sub">Press ⌘C anywhere — your last <span id="empty-count">5</span> copies appear here.</div>
     </div>
 
     <!-- Footer -->

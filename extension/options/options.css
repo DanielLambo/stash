@@ -7,14 +7,25 @@ body {
   padding: 40px 20px 80px;
 }
 
-.container { max-width: 720px; margin: 0 auto; }
+.container { max-width: 760px; margin: 0 auto; }
 
 .page-hdr {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 32px;
+  gap: 16px;
+  margin-bottom: 36px;
 }
+.page-hdr-text { min-width: 0; }
+.brand-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--text);
+}
+.page-hdr .subtitle { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
 .page-hdr .logo-mark {
   width: 48px; height: 48px;
   border-radius: 12px;
@@ -24,17 +35,14 @@ body {
   box-shadow: var(--shadow-md);
 }
 .page-hdr .logo-mark svg { width: 26px; height: 26px; }
-.page-hdr h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-.page-hdr .subtitle { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; }
-
-.group { margin-bottom: 28px; }
+.group { margin-bottom: 32px; }
 .group-title {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--text-tertiary);
-  margin: 0 14px 8px;
+  margin: 0 14px 10px;
 }
 .card-group {
   border-radius: var(--radius-md);
@@ -46,9 +54,11 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 16px;
+  padding: 15px 16px;
   border-bottom: 1px solid var(--divider);
+  transition: background var(--spring-fast);
 }
+.card-group .row:hover { background: var(--pill-bg); }
 .row.column { flex-direction: column; align-items: stretch; gap: 10px; }
 .row:last-child { border-bottom: none; }
 .row-info { flex: 1 1 auto; min-width: 0; }
@@ -121,12 +131,16 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
   position: relative;
 }
 .segmented button {
-  padding: 5px 14px;
+  padding: 6px 16px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   border-radius: 7px;
   transition: background var(--spring), color var(--spring);
+}
+.segmented button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 4px var(--surface-strong);
 }
 .segmented button.active {
   background: var(--surface-strong);
@@ -159,19 +173,35 @@ textarea.text-input {
 
 .page-ftr {
   text-align: center;
-  margin-top: 24px;
+  margin-top: 28px;
+  padding-bottom: 8px;
 }
 .save-status {
-  display: inline-block;
-  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
   background: var(--pill-bg);
   border-radius: 999px;
   font-size: 11px;
+  font-weight: 500;
   color: var(--text-tertiary);
-  transition: opacity var(--spring), transform var(--spring);
+  transition: opacity var(--spring), transform var(--spring), color var(--spring-fast);
 }
-.save-status.flash { color: var(--success); transform: scale(1.05); }
-
+.save-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.6;
+}
+.save-status.flash { color: var(--success); transform: scale(1.02); }
+.save-status.flash::before {
+  background: var(--success);
+  opacity: 1;
+  box-shadow: 0 0 8px var(--success);
+}
 .page-links {
   margin-top: 14px;
   font-size: 11px;

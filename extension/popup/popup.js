@@ -2,7 +2,7 @@ import {
   getItems, setItems, getSettings, removeItem, togglePin, clearAll,
   addItem, updateItem,
 } from "../lib/storage.js";
-import { categorize, timeAgo, summarize } from "../lib/categorize.js";
+import { categorize, timeAgo, summarize, trimUrlSurround } from "../lib/categorize.js";
 // NOTE: api.js is intentionally NOT imported here. The popup performs
 // no network calls — neither for sync nor for status. The Options
 // page is the only surface that touches `lib/api.js`, and only on
@@ -96,16 +96,28 @@ function statusKindFromLocalState() {
   return "ok";
 }
 
+function effectivePlaintext(item) {
+  if (!item) return "";
+  if (item.vaulted) return state.decrypted.get(item.id) || "";
+  return item.text || "";
+}
+
+function categorizeForDisplay(item) {
+  if (!item) return categorize({ kind: "text", text: "" });
+  if (item.kind === "image") return categorize(item);
+  return categorize({ ...item, text: effectivePlaintext(item) });
+}
+
 function visibleItems() {
   const q = state.query.trim().toLowerCase();
   return state.items.filter(item => {
-    const cat = categorize(item);
+    const cat = categorizeForDisplay(item);
     if (state.filter === "pinned" && !item.pinned) return false;
     if (state.filter !== "all" && state.filter !== "pinned" && cat.type !== state.filter) return false;
     if (q) {
       // Search includes decrypted plaintext for unlocked vaulted items.
-      const visibleText = item.vaulted ? (state.decrypted.get(item.id) || "") : (item.text || "");
-      const hay = visibleText + " " + (item.source || "");
+      const visibleText = effectivePlaintext(item);
+      const hay = `${visibleText} ${item.source || ""} ${cat.label} ${cat.type} ${cat.meta?.host || ""}`;
       if (!hay.toLowerCase().includes(q)) return false;
     }
     return true;
@@ -120,11 +132,24 @@ function render() {
 
   if (items.length === 0) {
     listEl.innerHTML = "";
-    emptyEl.classList.remove("hidden");
-    $("#empty-count").textContent = state.settings?.maxItems || 5;
+    if (emptyEl) {
+      emptyEl.classList.remove("hidden");
+      // Scope under #empty so this works even if ids are missing (older builds / cached HTML).
+      const emptyTitle = emptyEl.querySelector(".empty-title");
+      const emptySub = emptyEl.querySelector(".empty-sub");
+      if (emptyTitle && emptySub) {
+        if (all === 0) {
+          emptyTitle.textContent = "Nothing copied yet";
+          emptySub.innerHTML = `Press ⌘C anywhere — your last <span id="empty-count">${state.settings?.maxItems || 5}</span> copies appear here.`;
+        } else {
+          emptyTitle.textContent = "No matching items";
+          emptySub.textContent = "Try another filter, clear the search, or switch back to All.";
+        }
+      }
+    }
     return;
   }
-  emptyEl.classList.add("hidden");
+  emptyEl?.classList.add("hidden");
 
   const frag = document.createDocumentFragment();
   items.forEach((item, idx) => {
@@ -134,7 +159,7 @@ function render() {
 }
 
 function renderCard(item, index) {
-  const cat = categorize(item);
+  const cat = categorizeForDisplay(item);
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
@@ -170,7 +195,7 @@ function renderCard(item, index) {
     iconNode.dataset.type = "color";
     const fill = document.createElement("div");
     fill.className = "swatch-fill";
-    fill.style.background = cat.meta.hex;
+    fill.style.background = cat.meta.css || cat.meta.hex;
     iconNode.appendChild(fill);
   } else {
     iconNode = document.createElement("div");
@@ -199,7 +224,7 @@ function renderCard(item, index) {
     const decrypted = state.decrypted.get(item.id);
     text.textContent = (decrypted || "").replace(/\s+/g, " ").slice(0, 240);
   } else {
-    text.textContent = summarize(item);
+    text.textContent = summarize(item, 200);
   }
   row1.appendChild(text);
 
@@ -243,10 +268,12 @@ function renderCard(item, index) {
   // Action buttons (visible on hover)
   const actions = document.createElement("div");
   actions.className = "card-actions";
-  actions.appendChild(actionBtn(ICONS.pin, item.pinned ? "Unpin" : "Pin", e => {
+  const pinBtn = actionBtn(item.pinned ? ICONS.pinFilled : ICONS.pin, item.pinned ? "Unpin" : "Pin", e => {
     e.stopPropagation();
     togglePin(item.id).then(refresh);
-  }));
+  });
+  if (item.pinned) pinBtn.classList.add("is-pin-active");
+  actions.appendChild(pinBtn);
   actions.appendChild(actionBtn(ICONS.open, "Expand", e => {
     e.stopPropagation();
     openModal(item);
@@ -300,7 +327,7 @@ function renderCard(item, index) {
   }
 
   // Click → primary action (copy + smart action)
-  card.addEventListener("click", () => primaryAction(item, cat));
+  card.addEventListener("click", () => primaryAction(item, categorizeForDisplay(item)));
 
   return card;
 }
@@ -418,10 +445,11 @@ async function primaryAction(item, cat) {
   // Smart secondary actions for some types — non-blocking
   if (cat.type === "link") {
     try {
-      const url = new URL(item.text);
+      const href = cat.meta?.canonical || trimUrlSurround(item.text);
+      const url = new URL(href);
       if (url.protocol === "http:" || url.protocol === "https:") {
         chrome.tabs.create({ url: url.toString(), active: false });
-        toast(`Copied · opened ${cat.meta.host}`);
+        toast(`Copied · opened ${cat.meta?.host || url.hostname}`);
         return;
       }
     } catch {}
@@ -522,26 +550,42 @@ async function dataUrlToPngBlob(dataUrl) {
 function openModal(item) {
   state.modalItem = item;
   state.modalEditing = false;
-  const cat = categorize(item);
+  const vaultLocked = item.vaulted && !state.decrypted.has(item.id);
+  const cat = categorizeForDisplay(item);
   const dotColors = {
     text: "var(--type-text)", link: "var(--type-link)", email: "var(--type-email)",
     phone: "var(--type-phone)", color: "var(--type-color)", code: "var(--type-code)",
     image: "var(--type-image)",
   };
-  $("#modal-type").innerHTML = `<span class="dot" style="background:${dotColors[cat.type]}"></span> ${cat.label}`;
+  if (vaultLocked) {
+    $("#modal-type").innerHTML = `<span class="dot" style="background:var(--type-color)"></span> Vault`;
+  } else {
+    $("#modal-type").innerHTML = `<span class="dot" style="background:${dotColors[cat.type] || "var(--type-text)"}"></span> ${cat.label}`;
+  }
   const dsrc = displaySource(item.source);
   $("#modal-meta").textContent = `${timeAgo(item.ts)}${dsrc ? " · " + dsrc : ""}`;
   renderModalBody(item, cat);
   modal.classList.remove("hidden");
 
-  $("#modal-edit").style.display = item.kind === "image" ? "none" : "";
+  $("#modal-edit").style.display = item.kind === "image" || item.vaulted ? "none" : "";
 }
 
-function renderModalBody(item, cat) {
+function renderModalBody(item, _cat) {
   const body = $("#modal-body");
   body.innerHTML = "";
 
-  if (cat.type === "image") {
+  if (item.vaulted && !state.decrypted.has(item.id)) {
+    const p = document.createElement("p");
+    p.className = "vault-modal-hint";
+    p.textContent = "This item is protected. Click the card and enter your vault password to decrypt and copy.";
+    body.appendChild(p);
+    return;
+  }
+
+  const textSrc = effectivePlaintext(item);
+  const viewCat = categorizeForDisplay(item);
+
+  if (viewCat.type === "image") {
     const img = document.createElement("img");
     img.src = item.dataUrl;
     img.alt = "Clipboard image";
@@ -553,20 +597,24 @@ function renderModalBody(item, cat) {
     return;
   }
 
-  if (cat.type === "color") {
+  if (viewCat.type === "color") {
     const sw = document.createElement("div");
     sw.className = "modal-color-swatch";
-    sw.style.background = cat.meta.hex;
+    sw.style.background = viewCat.meta.css || viewCat.meta.hex;
     body.appendChild(sw);
     const info = document.createElement("div");
     info.className = "modal-color-info";
-    const rgb = hexToRgb(cat.meta.hex);
-    info.innerHTML = `<span>${cat.meta.hex.toUpperCase()}</span><span>rgb(${rgb.r}, ${rgb.g}, ${rgb.b})</span>`;
+    const rgb = hexToRgb(viewCat.meta.hex);
+    const s1 = document.createElement("span");
+    s1.textContent = viewCat.meta.css || String(viewCat.meta.hex).toUpperCase();
+    const s2 = document.createElement("span");
+    s2.textContent = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+    info.append(s1, s2);
     body.appendChild(info);
     return;
   }
 
-  if (cat.type === "link") {
+  if (viewCat.type === "link") {
     const wrap = document.createElement("div");
     wrap.className = "modal-link-preview";
     // SAFETY: deliberately no remote favicon fetch. Earlier drafts hit
@@ -582,25 +630,36 @@ function renderModalBody(item, cat) {
     info.className = "info";
     const host = document.createElement("div");
     host.className = "host";
-    host.textContent = cat.meta?.host || item.text;
-    const url = document.createElement("div");
-    url.className = "url";
-    url.textContent = item.text;
+    host.textContent = viewCat.meta?.host || textSrc;
+    const urlEl = document.createElement("div");
+    urlEl.className = "url";
+    urlEl.textContent = viewCat.meta?.canonical || trimUrlSurround(textSrc);
     info.appendChild(host);
-    info.appendChild(url);
+    info.appendChild(urlEl);
     wrap.appendChild(info);
     body.appendChild(wrap);
   }
 
   if (state.modalEditing) {
     const ta = document.createElement("textarea");
-    ta.value = item.text || "";
+    ta.value = textSrc;
     ta.id = "modal-textarea";
     body.appendChild(ta);
     setTimeout(() => ta.focus(), 50);
-  } else {
+    return;
+  }
+
+  if (viewCat.type === "code") {
     const pre = document.createElement("pre");
-    pre.textContent = item.text || "";
+    pre.className = "modal-pre-code";
+    pre.innerHTML = highlight(textSrc, detectLanguage(textSrc));
+    body.appendChild(pre);
+    return;
+  }
+
+  if (viewCat.type !== "image" && viewCat.type !== "color") {
+    const pre = document.createElement("pre");
+    pre.textContent = textSrc;
     body.appendChild(pre);
   }
 }
@@ -619,7 +678,7 @@ $("#modal-edit").addEventListener("click", async () => {
   if (!state.modalEditing) {
     state.modalEditing = true;
     $("#modal-edit").textContent = "Save";
-    renderModalBody(state.modalItem, categorize(state.modalItem));
+    renderModalBody(state.modalItem, categorizeForDisplay(state.modalItem));
     return;
   }
   const ta = $("#modal-textarea");
@@ -638,7 +697,7 @@ $("#modal-edit").addEventListener("click", async () => {
   state.modalItem = fresh;
   state.modalEditing = false;
   $("#modal-edit").textContent = "Edit";
-  renderModalBody(fresh, categorize(fresh));
+  renderModalBody(fresh, categorizeForDisplay(fresh));
   render();
   toast("Saved");
 });
@@ -713,7 +772,7 @@ document.addEventListener("keydown", e => {
   if (/^[1-9]$/.test(e.key) && document.activeElement !== searchEl && modal.classList.contains("hidden")) {
     const idx = parseInt(e.key, 10) - 1;
     const visible = visibleItems();
-    if (visible[idx]) primaryAction(visible[idx], categorize(visible[idx]));
+    if (visible[idx]) primaryAction(visible[idx], categorizeForDisplay(visible[idx]));
   }
 });
 
