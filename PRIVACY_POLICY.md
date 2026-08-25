@@ -1,6 +1,10 @@
 # Privacy Policy — Stash
 
-_Last updated: 2026-04-26_
+_Last updated: 2026-08-25 · v1.1_ — version bumps are tracked in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+**Zero data leaves your device unless you enable sync and point it at
+a server you configure.**
 
 Stash is a Chrome extension that helps you recall, search, transform, and
 optionally encrypt the things you copy on the web. **Your data lives on
@@ -19,6 +23,15 @@ goes, and what it never does.
   one you run yourself). Stash never has a default cloud destination.
 * Sensitive items (API keys, JWTs, credit cards, etc.) can be encrypted
   on your device with a master password before they're stored.
+
+| Data type | Purpose | Where stored | Shared with |
+|---|---|---|---|
+| Clipboard items | Recall, search, paste | Your device (`chrome.storage.local`) | Nobody, unless you enable sync — then the server URL you typed |
+| Vaulted secrets (ciphertext + IV) | Store sensitive copies without plaintext | Your device (`chrome.storage.local`) | Nobody in plaintext. Ciphertext only, and only if you enable sync |
+| Snippet rules | Optional text expansion | Your device (`chrome.storage.local`) | Nobody |
+| Settings (theme, blocklist, vault salt + verifier) | Configure Stash | Your device (`chrome.storage.sync`) | Chrome's own signed-in profile replication — not a Stash server |
+| Vault unlock cache (derived key) | Keep the vault unlocked this session | Memory only (`chrome.storage.session`) | Nobody |
+| Snippet trigger window | Detect triggers you defined | RAM only; wiped on focus change | Nobody |
 
 ---
 
@@ -69,13 +82,19 @@ the top so any auditor can verify this in under a minute.
 
 * **No analytics** of any kind. We don't count installs, opens,
   copies, clicks, or anything else.
-* **No browsing-history tracking.** Stash doesn't see which sites you
-  visit. The content script reacts to `copy`/`cut` events; it does not
-  read pages.
+* **No browsing-history tracking.** Stash does not record which sites
+  you visit. A content script *is* injected on every page (see
+  Permissions below) so it can catch *your* copy/cut; that is site
+  presence, not a history log.
 * **No content scraping.** Stash does not read page DOM, form values,
-  cookies, localStorage, or request bodies. It cannot — it has no
-  `host_permissions`, no `tabs` permission, and no `scripting`
-  permission, so the underlying APIs are not even available to it.
+  cookies, localStorage, or request bodies. Being injected via
+  `content_scripts` `matches: <all_urls>` is **not** the same as
+  holding `host_permissions` or `scripting`. Those latter permissions
+  would let the extension fetch those origins from its own pages
+  (bypassing CORS) or dynamically inject extra scripts that could
+  read page content. Stash has neither — `manifest.json` declares no
+  `host_permissions`, no `tabs`, and no `scripting` — so those APIs
+  are not available to it.
 * **No data sale.** Ever. Period.
 * **No remote code.** All JavaScript ships inside the extension
   package. Stash does not load scripts from CDNs or run code fetched
@@ -150,6 +169,12 @@ set up at capture time) are filtered out before push as a safety net.
 
 If you do not enable sync, **no data ever leaves your computer**.
 
+If you point sync at a server you did **not** write yourself, that
+server's own privacy practices govern the data once it arrives. Stash
+has no visibility or control over it after transmission — the
+developer of Stash cannot see, delete, or audit copies that live on
+someone else's host.
+
 ---
 
 ## Outgoing network requests, full list
@@ -177,7 +202,7 @@ any kind.
 | `clipboardWrite` | Copy a saved item back to your clipboard when you click it. | Only fires on your click. |
 | `alarms` | Run the optional sync round-trip every minute when sync is on. | Disabled when sync is off. |
 | `unlimitedStorage` | Allow image clips to exceed Chrome's default 5 MB storage cap. | We still cap each item ourselves (~5 MB). |
-| All-sites access (via content script `matches`) | Receive *your* `copy`/`cut` events on any page so the clipboard works site-agnostically. | Does not read pages. We have no `host_permissions`, no `scripting`, no `tabs` — the script cannot fetch, scrape, or inject elsewhere. |
+| All-sites access (via content script `matches: <all_urls>`) | Inject a listener into every page so *your* `copy`/`cut` events can be recorded site-agnostically. The extension **is present** on every site. This is a `content_scripts` declaration, not `host_permissions`. | Distinct from `host_permissions` / `scripting`, which Stash does **not** have. Those would let it fetch those origins from extension pages (bypassing CORS) or dynamically inject extra scripts that could read page content. The injected script only reacts to your copy/cut (and, if you opt in, snippet triggers). It cannot use `chrome.scripting`, `chrome.tabs`, or privileged cross-origin `fetch`. |
 
 ---
 
@@ -188,7 +213,16 @@ any kind.
 * **Block specific domains** — Settings → Privacy → Blocked domains.
 * **Disable snippet expansion** — Settings → Snippets (off by default).
 * **Lock Vault** at any time — Settings → Vault → Lock now.
-* **Reset Vault token** to unlink this device from sync.
+* **Reset device token** (Settings → Sync → Device token → Reset) to
+  unlink this device from sync. This clears **only the local sync
+  bearer token** stored in this browser. The next sync registers a
+  new anonymous identity. It does **not** delete items already on
+  your sync server, local clipboard history, or Vault key material
+  (salt, verifier, or session key). Data already pushed stays on the
+  server under the previous token until you — or whoever operates
+  that server — remove it. (`extension/options/options.js` only
+  writes `syncToken: ""`; `extension/lib/crypto.js` is not involved,
+  and `/server` has no revoke or delete-user endpoint.)
 * **Export your history** as JSON.
 * **Wipe everything** in one click.
 
@@ -203,25 +237,52 @@ any kind.
 
 ---
 
+## Your rights
+
+Because all Stash data is local (and, if you enable sync, on a server
+you configure), **you are the sole data controller** for what the
+extension holds. The developer of Stash keeps no copy of your
+clipboard, settings, or vault material, and therefore cannot fulfill
+access, deletion, or portability requests on your behalf. The Export
+and Wipe controls in Settings satisfy those rights directly: export
+is your portability copy; wipe is erasure.
+
+If you sync to a server you do not operate, that operator — not Stash
+— is who you would ask about copies that already arrived there.
+
+Governing law: this project's public metadata does not name a forum.
+Any dispute relating to this policy is governed by the laws of the
+place where you reside and use Stash.
+
+---
+
 ## Children
 
-Stash is not directed at children under 13 and does not knowingly
-collect data from them.
+Stash is not directed at children under 13 (or the relevant minimum
+age in your jurisdiction — GDPR's default is 16, and EU member states
+may set a lower threshold down to 13) and does not knowingly collect
+data from them.
 
 ---
 
 ## Changes
 
-If this policy changes, the date at the top moves and the change is
-noted in [`CHANGELOG.md`](CHANGELOG.md). Material changes will also
-appear in the extension's release notes on the Chrome Web Store.
+If this policy changes, the version and date at the top move and the
+change is noted in [`CHANGELOG.md`](CHANGELOG.md). Material changes
+will also appear in the extension's release notes on the Chrome Web
+Store.
 
 ---
 
 ## Contact
 
-For questions, security disclosures, or audit requests, open an
+For questions, audit requests, or non-sensitive reports, open an
 issue at: <https://github.com/daniellambo/stash/issues>
+
+For **security disclosures**, please use the private process in
+[`SECURITY.md`](SECURITY.md) first. Security reports sometimes need
+to stay private until a fix is ready; GitHub issues remain available
+as a fallback.
 
 (If the project moves, the canonical URL is tracked in `BRAND.md` in
 the repository root.)

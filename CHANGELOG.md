@@ -1,5 +1,26 @@
 # Changelog
 
+## Privacy policy v1.1 — 2026-08-25
+
+Documentation-only. Extension version unchanged.
+
+- Added a one-line TL;DR under the privacy-policy H1, a compact data
+  summary table, a Your rights (GDPR/CCPA) section, and a
+  third-party sync-server disclosure.
+- Clarified that `content_scripts` `matches: <all_urls>` means Stash
+  is present on every page, and that this is distinct from
+  `host_permissions` / `scripting` (neither of which Stash has).
+- Documented that **Reset device token** clears only the local sync
+  bearer token — it does not delete data already on the sync server
+  or Vault key material.
+- Updated children's-privacy wording for GDPR age thresholds.
+- Added [`SECURITY.md`](SECURITY.md) with a private responsible-
+  disclosure process; the privacy-policy Contact section now points
+  at it alongside GitHub issues.
+- Mirrored the same factual updates in the in-product
+  `extension/privacy.html` so it does not contradict the hosted
+  policy.
+
 ## 1.0.0 — 2026-04-26
 
 Initial Chrome Web Store release.

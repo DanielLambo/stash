@@ -82,7 +82,9 @@
 <body>
   <article class="doc">
     <h1>Privacy Policy — Stash</h1>
-    <div class="stamp">Last updated: 26 April 2026</div>
+    <div class="stamp">Last updated: 25 August 2026 · v1.1</div>
+    <p><strong>Zero data leaves your device unless you enable sync and
+    point it at a server you configure.</strong></p>
 
     <div class="pillbar">
       <span class="ok">No analytics</span>
@@ -99,6 +101,18 @@
     of any kind — no analytics, telemetry, error reporting, font CDNs, or
     favicon fetches. The only outgoing requests are to a sync server
     <strong>you choose</strong>, only when you opt in.</p>
+
+    <table>
+      <thead><tr><th>Data type</th><th>Purpose</th><th>Where stored</th><th>Shared with</th></tr></thead>
+      <tbody>
+        <tr><td>Clipboard items</td><td>Recall, search, paste</td><td>Your device (<code>chrome.storage.local</code>)</td><td>Nobody, unless you enable sync — then the server URL you typed</td></tr>
+        <tr><td>Vaulted secrets (ciphertext + IV)</td><td>Store sensitive copies without plaintext</td><td>Your device</td><td>Nobody in plaintext. Ciphertext only, and only if you enable sync</td></tr>
+        <tr><td>Snippet rules</td><td>Optional text expansion</td><td>Your device</td><td>Nobody</td></tr>
+        <tr><td>Settings (theme, blocklist, vault salt + verifier)</td><td>Configure Stash</td><td>Your device (<code>chrome.storage.sync</code>)</td><td>Chrome's own signed-in profile replication — not a Stash server</td></tr>
+        <tr><td>Vault unlock cache</td><td>Keep the vault unlocked this session</td><td>Memory only</td><td>Nobody</td></tr>
+        <tr><td>Snippet trigger window</td><td>Detect triggers you defined</td><td>RAM only; wiped on focus change</td><td>Nobody</td></tr>
+      </tbody>
+    </table>
 
     <h2>What Stash reads</h2>
     <h3>Things you copy</h3>
@@ -129,9 +143,15 @@
     <h2>What Stash never does</h2>
     <ul>
       <li>No analytics, telemetry, crash reporters, or A/B testing.</li>
-      <li>No browsing-history tracking. We do not see which sites you visit.</li>
+      <li>No browsing-history tracking. A content script is injected on
+      every page so it can catch <em>your</em> copy/cut; that is site
+      presence, not a history log.</li>
       <li>No content scraping. We do not read page DOM, form fields, cookies,
-      <code>localStorage</code>, or request bodies.</li>
+      <code>localStorage</code>, or request bodies. Being present via
+      <code>content_scripts</code> <code>matches: &lt;all_urls&gt;</code>
+      is distinct from <code>host_permissions</code> / <code>scripting</code>,
+      which Stash does not have and which would let it fetch those origins
+      or dynamically inject extra readers.</li>
       <li>No data sale. Ever.</li>
       <li>No remote code. All JavaScript ships inside the extension package.</li>
       <li>No ads, advertising IDs, or third-party trackers.</li>
@@ -173,6 +193,10 @@
     destination. When you turn it on, you provide a server URL — typically
     one you run yourself. Vaulted items go over the wire only as
     ciphertext.</p>
+    <p>If you point sync at a server you did <strong>not</strong> write
+    yourself, that server's own privacy practices govern the data once it
+    arrives. Stash has no visibility or control over it after
+    transmission.</p>
 
     <h2>Outgoing network requests, full list</h2>
     <p>Stash only makes outgoing requests via the optional sync feature,
@@ -192,15 +216,33 @@
       <li>Block specific domains.</li>
       <li>Disable snippet expansion (off by default).</li>
       <li>Lock the Vault at any time.</li>
+      <li>Reset the device token to unlink this device from sync. That
+      clears only the local bearer token — it does not delete items already
+      on your sync server, local history, or Vault key material.</li>
       <li>Export your history as JSON, or wipe everything.</li>
     </ul>
 
+    <h2>Your rights</h2>
+    <p>Because all Stash data is local (and, if you enable sync, on a
+    server you configure), <strong>you are the sole data controller</strong>.
+    The developer of Stash holds no copy to fulfill access, deletion, or
+    portability requests on your behalf. Export and Wipe in Settings
+    satisfy those rights directly.</p>
+    <p>Governing law: this project's public metadata does not name a
+    forum. Any dispute relating to this policy is governed by the laws
+    of the place where you reside and use Stash.</p>
+
     <h2>Children</h2>
-    <p>Stash is not directed at children under 13.</p>
+    <p>Stash is not directed at children under 13 (or the relevant
+    minimum age in your jurisdiction) and does not knowingly collect
+    data from them.</p>
 
     <h2>Contact</h2>
-    <p>For questions or security disclosures, open an issue at
-    <a href="https://github.com/daniellambo/stash/issues" target="_blank" rel="noopener noreferrer">github.com/daniellambo/stash/issues</a>.</p>
+    <p>For questions or non-sensitive reports, open an issue at
+    <a href="https://github.com/daniellambo/stash/issues" target="_blank" rel="noopener noreferrer">github.com/daniellambo/stash/issues</a>.
+    For security disclosures, please use the private process in
+    <a href="https://github.com/daniellambo/stash/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>
+    first.</p>
   </article>
 </body>
 </html>
