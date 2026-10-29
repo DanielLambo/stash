@@ -64,6 +64,11 @@ t("input with label", () => {
   assert.equal(segs[1].kind, "input");
   assert.equal(segs[1].value, "Recipient");
 });
+t("named variable is an input prompt", () => {
+  const segs = parseBody("Hi {var:Client}");
+  assert.equal(segs[1].kind, "input");
+  assert.equal(segs[1].value, "Client");
+});
 t("two placeholders preserve text between", () => {
   const segs = parseBody("{cursor} foo {clipboard}");
   assert.equal(segs.length, 3);

@@ -2,7 +2,7 @@
 // stores them, and pushes/pulls from the sync backend on a schedule.
 //
 // SAFETY GUARANTEES:
-//   • Only acts on three message types: "capture", "sync-now", "ping".
+//   • Only acts on capture, sync, screenshot, status, and health messages.
 //     Anything else is ignored.
 //   • The capture handler is event-driven: it runs only when the
 //     content script forwards a `copy`/`cut` event the user themselves
@@ -23,6 +23,30 @@ import { detectSensitive, describeKind } from "../lib/sensitive.js";
 import { encryptItem, isUnlocked, isSetup } from "../lib/crypto.js";
 
 const SYNC_ALARM = "clipboard-sync";
+const SYNC_RETRY_ALARM = "clipboard-sync-retry";
+const SYNC_STATUS_KEY = "clipboard_sync_status";
+let syncPromise = null;
+
+async function writeSyncStatus(patch) {
+  const current = (await chrome.storage.local.get(SYNC_STATUS_KEY))[SYNC_STATUS_KEY] || {};
+  const next = { ...current, ...patch, updatedAt: Date.now() };
+  await chrome.storage.local.set({ [SYNC_STATUS_KEY]: next });
+  return next;
+}
+
+async function scheduleRetry(error) {
+  const current = (await chrome.storage.local.get(SYNC_STATUS_KEY))[SYNC_STATUS_KEY] || {};
+  const attempts = Math.min(10, (Number(current.attempts) || 0) + 1);
+  const delayMinutes = Math.min(30, Math.pow(2, attempts - 1));
+  const nextRetryAt = Date.now() + delayMinutes * 60000;
+  await writeSyncStatus({
+    state: typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "retrying",
+    attempts,
+    nextRetryAt,
+    error: String(error?.message || error || "Sync failed"),
+  });
+  chrome.alarms.create(SYNC_RETRY_ALARM, { when: nextRetryAt });
+}
 
 // Hard ceiling for stored image data URLs. ~5 MB of base64 is roughly a
 // 3.7 MB binary image — well above typical screenshots, and still safe with
@@ -38,20 +62,27 @@ async function isBlocked(host) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
-      if (msg?.type === "capture") {
+      if (msg?.type === "capture" || msg?.type === "capture-manual") {
+        const manual = msg.type === "capture-manual";
         const settings = await getSettings();
-        if (!settings.enabled || !settings.capturePages) return sendResponse({ ok: false });
+        if (!settings.enabled || (!manual && !settings.capturePages)) return sendResponse({ ok: false });
         if (msg.payload.kind === "image" && !settings.captureImages) return sendResponse({ ok: false });
         if (msg.payload.kind === "image" && (msg.payload.dataUrl || "").length > MAX_IMAGE_DATA_URL_BYTES) {
           return sendResponse({ ok: false, reason: "image_too_large" });
         }
-        if (await isBlocked(msg.payload.source)) return sendResponse({ ok: false });
+        if (!manual && await isBlocked(msg.payload.source)) return sendResponse({ ok: false });
 
         // Vault: detect sensitive text and encrypt before it ever lands
         // in chrome.storage.local. If vault is locked or unconfigured,
         // refuse to capture and notify (rather than store plaintext).
         let payload = msg.payload;
-        if (settings.autoVault && payload.kind === "text") {
+        if (!settings.captureRichText && ["rich", "table"].includes(payload.kind)) {
+          payload = { ...payload, kind: "text", html: "", tableCsv: "", tableMarkdown: "" };
+        }
+        if (!settings.capturePageContext) {
+          payload = { ...payload, sourceUrl: "", sourceTitle: "" };
+        }
+        if (settings.autoVault && !["image", "file"].includes(payload.kind)) {
           const det = detectSensitive(payload.text || "");
           if (det.sensitive) {
             // POLICY: a sensitive item never lands in chrome.storage as
@@ -91,6 +122,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 chrome.action.setBadgeBackgroundColor({ color: "#ff453a" });
                 setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2500);
               } catch {}
+              await chrome.storage.local.set({
+                sensitive_capture_pending: { ts: Date.now(), kind: det.kind, reason: "vault_locked" },
+              });
               return sendResponse({ ok: false, reason: "vault_locked" });
             }
           }
@@ -111,7 +145,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       if (msg?.type === "sync-now") {
         const r = await syncRoundtrip();
-        return sendResponse({ ok: true, ...r });
+        return sendResponse(r);
+      }
+      if (msg?.type === "sync-status") {
+        const status = (await chrome.storage.local.get(SYNC_STATUS_KEY))[SYNC_STATUS_KEY] || { state: "idle" };
+        return sendResponse({ ok: true, status });
+      }
+      if (msg?.type === "capture-screenshot") {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const dataUrl = await chrome.tabs.captureVisibleTab(activeTab?.windowId, { format: "png" });
+        return sendResponse({ ok: true, dataUrl });
       }
       if (msg?.type === "ping") {
         return sendResponse({ ok: true, ts: Date.now() });
@@ -134,21 +177,33 @@ async function pushDebounced() {
       if (!settings.syncEnabled) return;
       await pushItems(items);
       await chrome.storage.local.set({ clipboard_last_sync_error: "" });
+      await writeSyncStatus({ state: "synced", attempts: 0, nextRetryAt: 0, error: "", lastSuccessAt: Date.now() });
     } catch (e) {
       await chrome.storage.local.set({ clipboard_last_sync_error: String(e?.message || e) });
+      await scheduleRetry(e);
     }
   }, 800);
 }
 
 async function syncRoundtrip() {
+  if (syncPromise) return syncPromise;
+  syncPromise = performSyncRoundtrip().finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+
+async function performSyncRoundtrip() {
   const settings = await getSettings();
-  if (!settings.syncEnabled) return { skipped: true };
+  if (!settings.syncEnabled || !settings.syncUrl) {
+    await writeSyncStatus({ state: "disabled", attempts: 0, nextRetryAt: 0, error: "" });
+    return { ok: true, skipped: true };
+  }
+  await writeSyncStatus({ state: "syncing", error: "" });
 
   const localItems = await getItems();
   let pushOk = true;
   let pushErr = null;
   try {
-    await pushItems(localItems);
+    var pushed = await pushItems(localItems);
   } catch (e) {
     pushOk = false;
     pushErr = e;
@@ -163,13 +218,17 @@ async function syncRoundtrip() {
     pullErr = e;
   }
 
-  if (remote?.items?.length) {
-    // Merge: keep highest ts per id; cap by maxItems but keep pinned.
+  const incoming = [...(pushed?.items || []), ...(remote?.items || [])];
+  if (incoming.length) {
+    // Merge by mutation timestamp. ts controls display recency; updatedAt
+    // controls conflict resolution so an older clip edited later still wins.
     const byId = new Map();
     for (const i of localItems) byId.set(i.id, i);
-    for (const i of remote.items) {
+    for (const i of incoming) {
       const cur = byId.get(i.id);
-      if (!cur || i.ts > cur.ts) byId.set(i.id, i);
+      const remoteVersion = Number(i.updatedAt) || Number(i.ts) || 0;
+      const localVersion = Number(cur?.updatedAt) || Number(cur?.ts) || 0;
+      if (!cur || remoteVersion > localVersion) byId.set(i.id, i);
     }
     const merged = [...byId.values()].sort((a, b) => b.ts - a.ts);
     const pinned = merged.filter(i => i.pinned);
@@ -191,16 +250,26 @@ async function syncRoundtrip() {
     });
   }
 
+  if (pushOk && !pullErr) {
+    await writeSyncStatus({
+      state: "synced", attempts: 0, nextRetryAt: 0, error: "",
+      lastSuccessAt: Date.now(), pushed: localItems.length, pulled: incoming.length,
+    });
+    chrome.alarms.clear(SYNC_RETRY_ALARM);
+  } else {
+    await scheduleRetry(pullErr || pushErr);
+  }
+
   return {
     ok: pushOk && !pullErr,
-    pulled: remote?.items?.length || 0,
+    pulled: incoming.length,
     error: pullErr ? String(pullErr.message || pullErr) : pushOk ? null : String(pushErr.message || pushErr),
   };
 }
 
 function ensureAlarm() {
   chrome.alarms.get(SYNC_ALARM, a => {
-    if (!a) chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 1 });
+    if (!a) chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
   });
 }
 
@@ -208,11 +277,15 @@ chrome.runtime.onInstalled.addListener(ensureAlarm);
 chrome.runtime.onStartup.addListener(ensureAlarm);
 
 chrome.alarms.onAlarm.addListener(async alarm => {
-  if (alarm.name === SYNC_ALARM) {
+  if (alarm.name === SYNC_ALARM || alarm.name === SYNC_RETRY_ALARM) {
     const settings = await getSettings();
     if (settings.syncEnabled) syncRoundtrip().catch(() => {});
   }
 });
+
+try {
+  self.addEventListener("online", () => syncRoundtrip().catch(() => {}));
+} catch {}
 
 // React to settings changes (e.g. user toggled sync) by syncing once.
 chrome.storage.onChanged.addListener((changes, area) => {

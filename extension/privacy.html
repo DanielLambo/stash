@@ -105,7 +105,7 @@
     <table>
       <thead><tr><th>Data type</th><th>Purpose</th><th>Where stored</th><th>Shared with</th></tr></thead>
       <tbody>
-        <tr><td>Clipboard items</td><td>Recall, search, paste</td><td>Your device (<code>chrome.storage.local</code>)</td><td>Nobody, unless you enable sync — then the server URL you typed</td></tr>
+        <tr><td>Clipboard items, source context, files, screenshots, and signatures</td><td>Recall, organize, search, paste, and preview</td><td>Your device (<code>chrome.storage.local</code>)</td><td>Nobody, unless you enable sync and allow the item to sync — then the server URL you typed. Files, screenshots, and signatures start as local-only.</td></tr>
         <tr><td>Vaulted secrets (ciphertext + IV)</td><td>Store sensitive copies without plaintext</td><td>Your device</td><td>Nobody in plaintext. Ciphertext only, and only if you enable sync</td></tr>
         <tr><td>Snippet rules</td><td>Optional text expansion</td><td>Your device</td><td>Nobody</td></tr>
         <tr><td>Settings (theme, blocklist, vault salt + verifier)</td><td>Configure Stash</td><td>Your device (<code>chrome.storage.sync</code>)</td><td>Chrome's own signed-in profile replication — not a Stash server</td></tr>
@@ -161,7 +161,7 @@
     <table>
       <thead><tr><th>Storage area</th><th>What we put there</th><th>Lifetime</th></tr></thead>
       <tbody>
-        <tr><td><code>chrome.storage.local</code></td><td>Clipboard items + snippet rules</td><td>Until you remove them or they roll off</td></tr>
+        <tr><td><code>chrome.storage.local</code></td><td>Clipboard items, source context, collections, tags, and snippet rules</td><td>Until you remove them, they expire, or they roll off</td></tr>
         <tr><td><code>chrome.storage.sync</code></td><td>Settings + Vault config (salt + verifier)</td><td>Until uninstall</td></tr>
         <tr><td><code>chrome.storage.session</code></td><td>Vault unlock cache (in-memory only)</td><td>Cleared on browser exit</td></tr>
       </tbody>

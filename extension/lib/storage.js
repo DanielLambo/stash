@@ -21,6 +21,9 @@ export const DEFAULT_SETTINGS = {
   // Auto-vault is on by default *behaviorally* (the detector still runs),
   // but no encryption happens until the user sets a master password.
   autoVault: true,
+  retentionDays: 0,                  // 0 = keep until history cap / manual deletion
+  captureRichText: true,
+  capturePageContext: true,
 };
 
 export const STORAGE_KEYS = {
@@ -28,7 +31,16 @@ export const STORAGE_KEYS = {
   SETTINGS: "clipboard_settings",
   LAST_SYNC: "clipboard_last_sync",
   SNIPPETS: "clipboard_snippets",
+  COLLECTIONS: "clipboard_collections",
 };
+
+export const DEFAULT_COLLECTIONS = [
+  { id: "inbox", name: "Inbox", color: "#8e8e93", createdAt: 0 },
+  { id: "work", name: "Work", color: "#0a84ff", createdAt: 0 },
+  { id: "personal", name: "Personal", color: "#30d158", createdAt: 0 },
+  { id: "projects", name: "Projects", color: "#af52de", createdAt: 0 },
+  { id: "signatures", name: "Signatures", color: "#ff9f0a", createdAt: 0 },
+];
 
 export async function getSettings() {
   const { [STORAGE_KEYS.SETTINGS]: s } = await chrome.storage.sync.get(STORAGE_KEYS.SETTINGS);
@@ -44,7 +56,13 @@ export async function setSettings(partial) {
 
 export async function getItems() {
   const { [STORAGE_KEYS.ITEMS]: items } = await chrome.storage.local.get(STORAGE_KEYS.ITEMS);
-  return Array.isArray(items) ? items : [];
+  const list = Array.isArray(items) ? items : [];
+  const now = Date.now();
+  const active = list.filter(item => !item.expiresAt || item.expiresAt > now || item.pinned);
+  if (active.length !== list.length) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.ITEMS]: active });
+  }
+  return active;
 }
 
 export async function setItems(items) {
@@ -59,6 +77,7 @@ export function makeId() {
 // Generous for typical screenshots; protects chrome.storage from runaway
 // accumulation even with the unlimitedStorage permission.
 export const MAX_IMAGE_DATA_URL_BYTES = 5 * 1024 * 1024;
+export const MAX_FILE_DATA_URL_BYTES = 8 * 1024 * 1024;
 
 // Add an item, deduping against the most recent and capping at maxItems (pinned preserved).
 export async function addItem(item) {
@@ -67,8 +86,11 @@ export async function addItem(item) {
   if (item?.kind === "image" && (item.dataUrl || "").length > MAX_IMAGE_DATA_URL_BYTES) {
     return null;
   }
+  if (item?.kind === "file" && (item.dataUrl || "").length > MAX_FILE_DATA_URL_BYTES) return null;
 
   const items = await getItems();
+  const now = Date.now();
+  const retentionDays = Math.max(0, Number(settings.retentionDays) || 0);
   const incoming = {
     id: item.id || makeId(),
     kind: item.kind || "text",
@@ -76,7 +98,8 @@ export async function addItem(item) {
     dataUrl: item.dataUrl || "",
     width: item.width || 0,
     height: item.height || 0,
-    ts: item.ts || Date.now(),
+    ts: Number(item.ts) || now,
+    updatedAt: Number(item.updatedAt) || Number(item.ts) || now,
     pinned: !!item.pinned,
     source: item.source || "",
     // Vault / sensitive flags propagate through addItem unchanged.
@@ -86,6 +109,22 @@ export async function addItem(item) {
     vaultMeta: item.vaultMeta || null,
     sensitive: !!item.sensitive,
     sensitiveKind: item.sensitiveKind || "",
+    html: item.html || "",
+    tableCsv: item.tableCsv || "",
+    tableMarkdown: item.tableMarkdown || "",
+    fileName: item.fileName || "",
+    mimeType: item.mimeType || "",
+    fileSize: Number(item.fileSize) || 0,
+    sourceUrl: item.sourceUrl || "",
+    sourceTitle: item.sourceTitle || "",
+    collectionId: item.collectionId || "inbox",
+    collectionName: item.collectionName || "",
+    collectionColor: item.collectionColor || "",
+    tags: Array.isArray(item.tags) ? [...new Set(item.tags.map(t => String(t).trim()).filter(Boolean))].slice(0, 20) : [],
+    syncExcluded: !!item.syncExcluded,
+    screenshot: !!item.screenshot,
+    signature: !!item.signature,
+    expiresAt: Number(item.expiresAt) || (retentionDays ? now + retentionDays * 86400000 : 0),
   };
 
   // Dedup: skip for vaulted items since each encryption has a unique IV /
@@ -99,7 +138,19 @@ export async function addItem(item) {
   if (idx >= 0) {
     const existing = items.splice(idx, 1)[0];
     existing.ts = incoming.ts;
+    existing.updatedAt = incoming.updatedAt;
     existing.source = incoming.source || existing.source;
+    for (const field of [
+      "html", "tableCsv", "tableMarkdown", "sourceUrl", "sourceTitle",
+      "fileName", "mimeType", "fileSize", "collectionId", "collectionName",
+      "collectionColor", "syncExcluded", "screenshot", "signature", "expiresAt",
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(item, field)) existing[field] = incoming[field];
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "tags")) {
+      existing.tags = [...new Set([...(existing.tags || []), ...incoming.tags])].slice(0, 20);
+    }
+    if (incoming.pinned) existing.pinned = true;
     items.unshift(existing);
     await setItems(items);
     return existing;
@@ -128,19 +179,63 @@ export async function removeItem(id) {
 
 export async function togglePin(id) {
   const items = await getItems();
-  const next = items.map(i => (i.id === id ? { ...i, pinned: !i.pinned } : i));
+  const next = items.map(i => (i.id === id ? { ...i, pinned: !i.pinned, updatedAt: Date.now() } : i));
   await setItems(next);
 }
 
 export async function updateItem(id, patch) {
   const items = await getItems();
-  const next = items.map(i => (i.id === id ? { ...i, ...patch } : i));
+  const next = items.map(i => (i.id === id ? { ...i, ...patch, updatedAt: Number(patch?.updatedAt) || Date.now() } : i));
   await setItems(next);
+}
+
+export async function updateItems(ids, patch) {
+  const wanted = new Set(ids || []);
+  const now = Date.now();
+  const items = await getItems();
+  const next = items.map(i => wanted.has(i.id) ? { ...i, ...patch, updatedAt: now } : i);
+  await setItems(next);
+  return next.filter(i => wanted.has(i.id));
+}
+
+export async function removeItems(ids) {
+  const wanted = new Set(ids || []);
+  const items = await getItems();
+  await setItems(items.filter(i => !wanted.has(i.id)));
 }
 
 export async function clearAll() {
   const items = await getItems();
   await setItems(items.filter(i => i.pinned));
+}
+
+export async function getCollections() {
+  const { [STORAGE_KEYS.COLLECTIONS]: saved } = await chrome.storage.local.get(STORAGE_KEYS.COLLECTIONS);
+  const custom = Array.isArray(saved) ? saved : [];
+  const byId = new Map(DEFAULT_COLLECTIONS.map(c => [c.id, c]));
+  for (const c of custom) if (c?.id && c?.name) byId.set(c.id, c);
+  return [...byId.values()];
+}
+
+export async function upsertCollection(collection) {
+  const name = String(collection?.name || "").trim();
+  if (!name) throw new Error("collection name required");
+  const all = await getCollections();
+  const id = collection.id || `col_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const next = all.filter(c => c.id !== id);
+  const saved = { id, name: name.slice(0, 40), color: collection.color || "#8e8e93", createdAt: collection.createdAt || Date.now() };
+  next.push(saved);
+  await chrome.storage.local.set({ [STORAGE_KEYS.COLLECTIONS]: next });
+  return saved;
+}
+
+export async function removeCollection(id) {
+  if (id === "inbox") return;
+  const all = await getCollections();
+  await chrome.storage.local.set({ [STORAGE_KEYS.COLLECTIONS]: all.filter(c => c.id !== id) });
+  const items = await getItems();
+  const now = Date.now();
+  await setItems(items.map(i => i.collectionId === id ? { ...i, collectionId: "inbox", updatedAt: now } : i));
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -180,6 +275,7 @@ export async function upsertSnippet(snippet) {
     trigger,
     body,
     label: snippet.label || "",
+    variables: Array.isArray(snippet.variables) ? snippet.variables : [],
     createdAt: snippet.createdAt || now,
     updatedAt: now,
   };

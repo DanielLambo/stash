@@ -180,7 +180,34 @@
       let text = e.clipboardData?.getData("text/plain") || "";
       if (!text) text = (window.getSelection()?.toString() || "");
       if (!text || !text.trim()) return;
-      send({ kind: "text", text, source: HOST, ts: Date.now() });
+      const html = e.clipboardData?.getData("text/html") || "";
+      const context = {
+        source: HOST,
+        sourceUrl: location.href,
+        sourceTitle: document.title || "",
+        capturedAt: Date.now(),
+        ts: Date.now(),
+      };
+      if (html) {
+        try {
+          const rich = await import(chrome.runtime.getURL("lib/rich.js"));
+          const rows = rich.tableRowsFromHtml(html);
+          const safeHtml = rich.sanitizeRichHtml(html);
+          if (rows.length) {
+            send({
+              ...context, kind: "table", text, html: safeHtml,
+              tableCsv: rich.rowsToCsv(rows),
+              tableMarkdown: rich.rowsToMarkdown(rows),
+            });
+            return;
+          }
+          if (safeHtml && rich.hasMeaningfulFormatting(safeHtml)) {
+            send({ ...context, kind: "rich", text, html: safeHtml });
+            return;
+          }
+        } catch {}
+      }
+      send({ ...context, kind: "text", text });
     } catch {
       // never break the page
     }
@@ -250,13 +277,12 @@
     if (!e.isTrusted) return;
     if (!isHudTrigger(e)) return;
     const target = deepActive();
-    if (!isEditable(target)) return;
     // We're committed to the HUD now — preventDefault before the async
     // import so the browser doesn't run paste-and-match in the meantime.
     e.preventDefault();
     e.stopPropagation();
     const mod = await loadHud();
-    if (mod && !mod.isOpen()) mod.open(target);
+    if (mod && !mod.isOpen()) mod.open(isEditable(target) ? target : null);
   }, true);
 
   // ─────────────────────────────────────────────────────────────────

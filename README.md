@@ -28,6 +28,20 @@ browsers and machines.
 - **Privacy-first** — capture pause, per-domain blocklist, optional sync.
   Sync token is opaque and per-device.
 - **Cross-device sync** — Node + Express + SQLite (WAL) backend.
+- **Command palette** — press Cmd/Ctrl+Shift+V on any webpage, search with the
+  keyboard, and paste with Enter or the 1–9 keys. Rich text is preserved in
+  editable pages; Shift+Enter pastes plain text.
+- **Collections and tags** — group clips into Inbox, Work, Personal, Projects,
+  or custom collections, then organize or delete them in bulk.
+- **Rich captures** — formatted selections retain safe HTML and page context;
+  tables can be copied as formatted content, CSV, or Markdown.
+- **Files and screenshots** — drag files into the popup, or capture, crop,
+  annotate, and optionally extract text from the visible tab.
+- **Reusable signatures** — draw with a mouse, pen, or finger, or import an
+  existing signature image. Stash trims transparent space, pins it in a
+  Signatures collection, and copies it as a transparent PNG.
+- **Reliable optional sync** — full millisecond timestamps, deterministic
+  newer-edit conflict handling, status reporting, and exponential offline retry.
   Anonymous device registration, bearer-token auth, debounced push, periodic pull.
 - **Manifest V3** — service worker + content scripts, no remote code,
   no analytics.
@@ -128,12 +142,15 @@ Each install gets its own anonymous bearer token. To share history:
 |---|---|---|
 | Enable capture | on | Master switch. |
 | History size | 5 | 3–50. Pinned items don't count toward the cap. |
+| Automatic expiry | Never | Optional 1, 7, 30, or 90 day retention. Pinned items do not expire. |
 | Capture images | on | When on, images become base64 data URLs. |
 | Show capture badge | off | Briefly highlights the toolbar icon on each copy. |
 | Theme | Auto | Auto / Light / Dark. |
 | Sync enabled | off | Turn on once your server is reachable. |
 | Server URL | `http://localhost:8787` | Change to point at your own server. |
 | Capture on websites | on | Turn off to use only the popup's manual capture. |
+| Rich text & tables | on | Retains sanitized formatting and table export formats. |
+| Page context | on | Saves the source URL and title with webpage selections. |
 | Blocked domains | empty | One per line. Subdomains included. |
 
 ---

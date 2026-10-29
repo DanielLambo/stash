@@ -2,15 +2,16 @@
   "manifest_version": 3,
   "name": "Stash — Smart Clipboard for Power Users",
   "short_name": "Stash",
-  "version": "1.0.2",
-  "description": "Inline paste overlay, text expansion, smart actions, on-device encryption for secrets. Fully local — no third-party calls.",
+  "version": "2.0.0",
+  "description": "Clipboard command palette, rich capture, collections, snippets, screenshots, and encrypted optional sync.",
   "homepage_url": "https://github.com/daniellambo/stash",
   "permissions": [
     "storage",
     "clipboardRead",
     "clipboardWrite",
     "alarms",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "activeTab"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
@@ -63,6 +64,7 @@
         "lib/sensitive.js",
         "lib/crypto.js",
         "lib/actions.js",
+        "lib/rich.js",
         "privacy.html"
       ],
       "matches": ["<all_urls>"]

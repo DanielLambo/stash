@@ -74,6 +74,16 @@ body {
 .subtitle.error::before { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
 
 .hdr-right { display: flex; gap: 4px; }
+.privacy-warning {
+  margin: 0 14px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,159,10,.14);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.privacy-warning.hidden { display: none; }
 
 /* Search */
 .search-row { padding: 4px 14px 8px; flex-shrink: 0; }
@@ -136,6 +146,53 @@ body {
 .pill:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 4px var(--surface-strong);
+}
+.organize-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 8px;
+}
+.organize-row select, .bulk-bar select, .bulk-bar input {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 11px;
+  padding: 5px 7px;
+}
+.organize-row select { flex: 1; }
+.bulk-bar {
+  margin: 0 12px 8px;
+  padding: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.bulk-bar.hidden { display: none; }
+.bulk-bar span { font-size: 10px; color: var(--text-secondary); }
+.bulk-bar input { width: 100px; }
+.card-select {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  align-self: center;
+}
+.card-tags {
+  display: flex;
+  gap: 3px;
+  overflow: hidden;
+}
+.card-mini-tag {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  font-size: 9px;
 }
 
 /* List */
@@ -221,6 +278,11 @@ body {
   border: 1px solid var(--border);
   flex-shrink: 0;
   align-self: center;
+}
+.card.is-signature .card-thumb {
+  background-color: #fff;
+  background-size: contain;
+  background-repeat: no-repeat;
 }
 
 .card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; align-self: center; }
@@ -524,6 +586,43 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
+.shot-tools { display:flex; gap:6px; padding:10px 12px 0; }
+.shot-tools .active { color:var(--accent); background:var(--accent-soft); }
+.screenshot-card { max-height: 570px; }
+.shot-stage { margin:10px 12px; max-height:390px; overflow:auto; background:#111; border-radius:8px; }
+.shot-stage canvas { display:block; width:100%; height:auto; cursor:crosshair; }
+.shot-status { padding:0 12px 10px; font-size:10px; color:var(--text-secondary); min-height:24px; }
+.source-context { display:block; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:10px; text-align:left; }
+.signature-card { max-height:570px; }
+.signature-form { padding:12px; display:flex; flex-direction:column; gap:10px; }
+.signature-name {
+  width:100%; padding:8px 10px; border:1px solid var(--border);
+  border-radius:8px; background:var(--surface-strong); color:var(--text);
+  font:500 13px var(--font-sans); outline:none;
+}
+.signature-name:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.signature-stage {
+  overflow:hidden; border:1px solid var(--border); border-radius:9px;
+  background-color:#fff;
+  background-image:
+    linear-gradient(45deg, #f2f2f2 25%, transparent 25%),
+    linear-gradient(-45deg, #f2f2f2 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f2f2f2 75%),
+    linear-gradient(-45deg, transparent 75%, #f2f2f2 75%);
+  background-size:16px 16px;
+  background-position:0 0, 0 8px, 8px -8px, -8px 0;
+}
+.signature-stage canvas { display:block; width:100%; height:auto; touch-action:none; cursor:crosshair; }
+.signature-tools { display:flex; align-items:center; gap:8px; }
+.signature-color-label { display:flex; align-items:center; gap:5px; color:var(--text-secondary); font-size:11px; }
+.signature-color-label input { width:28px; height:28px; padding:1px; border:1px solid var(--border); border-radius:6px; background:var(--surface); }
+.drop-active::after {
+  content:"Drop files to add them";
+  position:absolute; inset:8px; z-index:300;
+  display:flex; align-items:center; justify-content:center;
+  border:2px dashed var(--accent); border-radius:14px;
+  background:var(--surface-strong); color:var(--accent); font-weight:600;
+}
 .vault-modal-hint {
   margin: 0;
   font-size: 13px;
@@ -578,7 +677,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.modal-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex-shrink: 0; }
 
 /* Vault: card states */
 .card.hidden-content .card-text {

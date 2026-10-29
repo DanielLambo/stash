@@ -40,7 +40,8 @@ function requireAuth(req, res, next) {
 
 // Pull: items updated after ?since=<ms>
 app.get("/api/items", requireAuth, (req, res) => {
-  const since = parseInt(req.query.since, 10) || 0;
+  const parsed = Number(req.query.since);
+  const since = Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   const items = itemsForUserSince(req.user.id, since);
   res.json({ items, ts: Date.now() });
 });

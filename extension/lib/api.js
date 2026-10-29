@@ -27,6 +27,7 @@ import { detectSensitive } from "./sensitive.js";
 // sensitive: true; we drop those rather than leak them.
 function safeForSync(item) {
   if (!item) return false;
+  if (item.syncExcluded) return false;
   if (item.vaulted) return true;          // already encrypted
   if (item.kind === "image") return true;
   const text = item.text || "";
@@ -73,7 +74,8 @@ export async function pullItems(since = 0) {
   const settings = await getSettings();
   if (!settings.syncEnabled || !settings.syncUrl) return null;
   const token = await ensureToken(settings);
-  const r = await fetch(`${settings.syncUrl}/api/items?since=${since}`, {
+  const watermark = Number.isFinite(Number(since)) ? Math.max(0, Math.trunc(Number(since))) : 0;
+  const r = await fetch(`${settings.syncUrl}/api/items?since=${watermark}`, {
     headers: { authorization: `Bearer ${token}` },
   });
   if (!r.ok) throw new Error(`pull failed: ${r.status}`);

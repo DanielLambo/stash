@@ -19,7 +19,7 @@
       </div>
       <div class="page-hdr-text">
         <h1 class="brand-title">Stash</h1>
-        <p class="subtitle">Clipboard history &amp; settings · v1.0</p>
+        <p class="subtitle">Clipboard history &amp; settings · v2.0</p>
       </div>
     </header>
 
@@ -53,10 +53,53 @@
         </div>
         <div class="row">
           <div class="row-info">
+            <div class="row-title">Preserve rich text and tables</div>
+            <div class="row-sub">Keep headings, lists, links, and table structure alongside plain text.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="captureRichText"><span class="slider"></span></label>
+        </div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Automatic expiry</div>
+            <div class="row-sub">Pinned clips never expire.</div>
+          </div>
+          <select id="retentionDays" class="text-input compact">
+            <option value="0">Never</option><option value="1">After 1 day</option>
+            <option value="7">After 7 days</option><option value="30">After 30 days</option>
+            <option value="90">After 90 days</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="row-info">
             <div class="row-title">Show capture badge</div>
             <div class="row-sub">Briefly highlight the toolbar icon when a copy is saved.</div>
           </div>
           <label class="switch"><input type="checkbox" id="showNotifications"><span class="slider"></span></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2 class="group-title">Collections &amp; tags</h2>
+      <div class="card-group glass">
+        <div class="row column">
+          <div class="row-info">
+            <div class="row-title">Collections</div>
+            <div class="row-sub">Organize clips into workspaces. Tags can be added from bulk selection in the popup.</div>
+          </div>
+          <div id="collections-list" class="collections-list"></div>
+          <div class="inline-create">
+            <input id="collection-name" class="text-input" placeholder="New collection name" />
+            <input id="collection-color" type="color" value="#0a84ff" />
+            <button class="btn primary" id="collection-add">Add</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Save page context</div>
+            <div class="row-sub">Store the page title and URL with copied selections for research and citations.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="capturePageContext"><span class="slider"></span></label>
         </div>
       </div>
     </section>
@@ -130,7 +173,7 @@
               Type a trigger anywhere on the web and it expands to your saved
               text. Supports <code>{cursor}</code>, <code>{date}</code>,
               <code>{date:FORMAT}</code>, <code>{clipboard}</code>, and
-              <code>{input:Label}</code>.
+              named variables such as <code>{var:Client}</code>.
             </div>
           </div>
           <label class="switch"><input type="checkbox" id="snippetsEnabled"><span class="slider"></span></label>
@@ -141,7 +184,12 @@
             <div class="row-sub">Triggers must be unique. A short prefix like <code>;</code> or <code>;;</code> avoids accidental matches.</div>
           </div>
           <div id="snippets-list" class="snippets-list"></div>
-          <button class="btn primary" id="snippet-new">+ New snippet</button>
+          <div class="row-actions">
+            <button class="btn primary" id="snippet-new">+ New snippet</button>
+            <button class="btn" id="snippet-export">Export</button>
+            <button class="btn" id="snippet-import">Import</button>
+            <input id="snippet-import-file" type="file" accept="application/json" hidden />
+          </div>
         </div>
       </div>
     </section>

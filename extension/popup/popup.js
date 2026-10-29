@@ -1,6 +1,6 @@
 import {
   getItems, setItems, getSettings, removeItem, togglePin, clearAll,
-  addItem, updateItem,
+  addItem, updateItem, updateItems, removeItems, getCollections,
 } from "../lib/storage.js";
 import { categorize, timeAgo, summarize, trimUrlSurround } from "../lib/categorize.js";
 // NOTE: api.js is intentionally NOT imported here. The popup performs
@@ -14,6 +14,8 @@ import {
   unlockVault, lockVault, decryptItem, setupVault,
 } from "../lib/crypto.js";
 import { describeKind } from "../lib/sensitive.js";
+import { sanitizeRichHtml, tableRowsFromHtml, rowsToCsv, rowsToMarkdown } from "../lib/rich.js";
+import { findAlphaBounds } from "../lib/image.js";
 
 const $ = sel => document.querySelector(sel);
 const listEl = $("#list");
@@ -36,6 +38,11 @@ let state = {
   // id → decrypted plaintext, populated after a successful unlock so we
   // don't decrypt on every render
   decrypted: new Map(),
+  collections: [],
+  collectionFilter: "all",
+  bulkMode: false,
+  selected: new Set(),
+  syncStatus: null,
 };
 
 const ICONS = {
@@ -87,12 +94,20 @@ function displaySource(src) {
 
 function statusFromLocalState() {
   if (!state.settings?.enabled) return "Paused";
+  if (state.settings?.syncEnabled && state.syncStatus?.state === "syncing") return "Syncing…";
+  if (state.settings?.syncEnabled && state.syncStatus?.state === "offline") return "Offline · retry queued";
+  if (state.settings?.syncEnabled && state.syncStatus?.state === "retrying") {
+    const when = state.syncStatus.nextRetryAt ? new Date(state.syncStatus.nextRetryAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "soon";
+    return `Sync retry ${when}`;
+  }
+  if (state.settings?.syncEnabled && state.syncStatus?.state === "synced") return "Ready · synced";
   if (state.vault?.setup && state.vault?.unlocked) return "Ready · Vault unlocked";
   if (state.vault?.setup) return "Ready · Vault locked";
   return "Ready";
 }
 function statusKindFromLocalState() {
   if (!state.settings?.enabled) return "offline";
+  if (["offline", "retrying"].includes(state.syncStatus?.state)) return "error";
   return "ok";
 }
 
@@ -111,13 +126,14 @@ function categorizeForDisplay(item) {
 function visibleItems() {
   const q = state.query.trim().toLowerCase();
   return state.items.filter(item => {
+    if (state.collectionFilter !== "all" && (item.collectionId || "inbox") !== state.collectionFilter) return false;
     const cat = categorizeForDisplay(item);
     if (state.filter === "pinned" && !item.pinned) return false;
     if (state.filter !== "all" && state.filter !== "pinned" && cat.type !== state.filter) return false;
     if (q) {
       // Search includes decrypted plaintext for unlocked vaulted items.
       const visibleText = effectivePlaintext(item);
-      const hay = `${visibleText} ${item.source || ""} ${cat.label} ${cat.type} ${cat.meta?.host || ""}`;
+      const hay = `${visibleText} ${item.source || ""} ${item.sourceTitle || ""} ${(item.tags || []).join(" ")} ${cat.label} ${cat.type} ${cat.meta?.host || ""}`;
       if (!hay.toLowerCase().includes(q)) return false;
     }
     return true;
@@ -128,7 +144,12 @@ function render() {
   const items = visibleItems();
   const all = state.items.length;
   ftrStat.textContent = all === 0 ? "0 items" : `${all} item${all === 1 ? "" : "s"}`;
-  if (state.settings?.syncEnabled) ftrStat.textContent += " · synced";
+  if (state.settings?.syncEnabled) {
+    const syncLabel = state.syncStatus?.state === "synced" ? "synced" :
+      state.syncStatus?.state === "syncing" ? "syncing" :
+      ["offline", "retrying"].includes(state.syncStatus?.state) ? "retry queued" : "sync on";
+    ftrStat.textContent += ` · ${syncLabel}`;
+  }
 
   if (items.length === 0) {
     listEl.innerHTML = "";
@@ -166,6 +187,19 @@ function renderCard(item, index) {
   card.dataset.id = item.id;
   if (item.pinned) card.classList.add("pinned");
   if (cat.type === "code") card.classList.add("is-code");
+  if (item.signature) card.classList.add("is-signature");
+  if (state.bulkMode) {
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "card-select";
+    check.checked = state.selected.has(item.id);
+    check.addEventListener("click", e => {
+      e.stopPropagation();
+      if (check.checked) state.selected.add(item.id); else state.selected.delete(item.id);
+      updateBulkCount();
+    });
+    card.appendChild(check);
+  }
 
   // Vault treatment — only items that are actually encrypted (have
   // ciphertext on disk) get blurred until the user unlocks. A
@@ -241,6 +275,25 @@ function renderCard(item, index) {
     tag.textContent = cat.label;
   }
   row2.appendChild(tag);
+  const collection = state.collections.find(c => c.id === (item.collectionId || "inbox"));
+  if (collection) {
+    row2.appendChild(dot());
+    const col = document.createElement("span");
+    col.textContent = collection.name;
+    col.style.color = collection.color;
+    row2.appendChild(col);
+  }
+  if (item.tags?.length) {
+    const tags = document.createElement("span");
+    tags.className = "card-tags";
+    for (const value of item.tags.slice(0, 2)) {
+      const t = document.createElement("span");
+      t.className = "card-mini-tag";
+      t.textContent = `#${value}`;
+      tags.appendChild(t);
+    }
+    row2.appendChild(tags);
+  }
   row2.appendChild(dot());
   const time = document.createElement("span");
   time.textContent = timeAgo(item.ts);
@@ -327,7 +380,15 @@ function renderCard(item, index) {
   }
 
   // Click → primary action (copy + smart action)
-  card.addEventListener("click", () => primaryAction(item, categorizeForDisplay(item)));
+  card.addEventListener("click", () => {
+    if (state.bulkMode) {
+      if (state.selected.has(item.id)) state.selected.delete(item.id); else state.selected.add(item.id);
+      render();
+      updateBulkCount();
+      return;
+    }
+    primaryAction(item, categorizeForDisplay(item));
+  });
 
   return card;
 }
@@ -491,6 +552,7 @@ function showVaultUnlock(onDone) {
       overlay.classList.add("hidden");
       // Refresh state so isUnlocked() reads the new session.
       state.vault.unlocked = true;
+      await chrome.storage.local.remove("sensitive_capture_pending");
       onDone(true);
     } else {
       err.textContent = "Wrong password";
@@ -516,6 +578,17 @@ async function copyToClipboard(item) {
       // Convert to PNG — the only image type the W3C Clipboard API guarantees.
       const pngBlob = await dataUrlToPngBlob(item.dataUrl);
       await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+    } else if (item.kind === "file" && item.dataUrl) {
+      const a = document.createElement("a");
+      a.href = item.dataUrl;
+      a.download = item.fileName || "stash-file";
+      a.click();
+    } else if (item.html && navigator.clipboard?.write) {
+      const safeHtml = sanitizeRichHtml(item.html);
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/plain": new Blob([item.text || ""], { type: "text/plain" }),
+        "text/html": new Blob([safeHtml], { type: "text/html" }),
+      })]);
     } else {
       await navigator.clipboard.writeText(item.text || "");
     }
@@ -555,7 +628,7 @@ function openModal(item) {
   const dotColors = {
     text: "var(--type-text)", link: "var(--type-link)", email: "var(--type-email)",
     phone: "var(--type-phone)", color: "var(--type-color)", code: "var(--type-code)",
-    image: "var(--type-image)",
+    image: "var(--type-image)", rich: "var(--type-link)", table: "var(--type-color)", file: "var(--type-email)",
   };
   if (vaultLocked) {
     $("#modal-type").innerHTML = `<span class="dot" style="background:var(--type-color)"></span> Vault`;
@@ -567,7 +640,11 @@ function openModal(item) {
   renderModalBody(item, cat);
   modal.classList.remove("hidden");
 
-  $("#modal-edit").style.display = item.kind === "image" || item.vaulted ? "none" : "";
+  $("#modal-edit").style.display = ["image", "file", "rich", "table"].includes(item.kind) || item.vaulted ? "none" : "";
+  $("#modal-plain").style.display = item.html || item.tableCsv ? "" : "none";
+  $("#modal-csv").style.display = item.kind === "table" ? "" : "none";
+  $("#modal-markdown").style.display = item.kind === "table" ? "" : "none";
+  $("#modal-local").textContent = item.syncExcluded ? "Allow sync" : "Local only";
 }
 
 function renderModalBody(item, _cat) {
@@ -584,6 +661,52 @@ function renderModalBody(item, _cat) {
 
   const textSrc = effectivePlaintext(item);
   const viewCat = categorizeForDisplay(item);
+  if (item.sourceTitle || item.sourceUrl) {
+    const source = document.createElement("button");
+    source.className = "btn source-context";
+    source.textContent = item.sourceTitle || item.sourceUrl;
+    source.title = item.sourceUrl || "";
+    source.addEventListener("click", () => {
+      if (/^https?:\/\//i.test(item.sourceUrl || "")) chrome.tabs.create({ url: item.sourceUrl, active: false });
+    });
+    body.appendChild(source);
+  }
+
+  if (item.kind === "file") {
+    const wrap = document.createElement("div");
+    wrap.className = "vault-modal-hint";
+    wrap.textContent = `${item.fileName || "File"} · ${item.mimeType || "unknown type"} · ${formatBytes(item.fileSize || 0)}`;
+    body.appendChild(wrap);
+    if (item.mimeType?.startsWith("audio/")) {
+      const audio = document.createElement("audio");
+      audio.controls = true; audio.src = item.dataUrl; audio.style.width = "100%";
+      body.appendChild(audio);
+    } else if (item.mimeType === "application/pdf") {
+      const embed = document.createElement("embed");
+      embed.src = item.dataUrl; embed.type = "application/pdf";
+      embed.style.cssText = "width:100%;height:300px";
+      body.appendChild(embed);
+    }
+    return;
+  }
+  if ((item.kind === "rich" || item.kind === "table") && item.html) {
+    const rich = document.createElement("div");
+    rich.className = "rich-preview";
+    rich.innerHTML = sanitizeRichHtml(item.html);
+    rich.addEventListener("click", e => {
+      const link = e.target.closest("a");
+      if (!link) return;
+      e.preventDefault();
+      if (/^https?:\/\//i.test(link.href)) chrome.tabs.create({ url: link.href, active: false });
+    });
+    body.appendChild(rich);
+    if (item.kind === "table") {
+      const pre = document.createElement("pre");
+      pre.textContent = item.tableMarkdown || item.tableCsv || "";
+      body.appendChild(pre);
+    }
+    return;
+  }
 
   if (viewCat.type === "image") {
     const img = document.createElement("img");
@@ -707,6 +830,30 @@ $("#modal-copy").addEventListener("click", async () => {
   const ok = await copyToClipboard(state.modalItem);
   if (ok) toast("Copied");
 });
+$("#modal-plain").addEventListener("click", async () => {
+  if (!state.modalItem) return;
+  const text = state.modalItem.tableMarkdown || effectivePlaintext(state.modalItem);
+  try { await navigator.clipboard.writeText(text); toast("Plain text copied"); } catch { toast("Copy failed"); }
+});
+$("#modal-csv").addEventListener("click", async () => {
+  if (!state.modalItem?.tableCsv) return;
+  await navigator.clipboard.writeText(state.modalItem.tableCsv);
+  toast("CSV copied");
+});
+$("#modal-markdown").addEventListener("click", async () => {
+  if (!state.modalItem?.tableMarkdown) return;
+  await navigator.clipboard.writeText(state.modalItem.tableMarkdown);
+  toast("Markdown copied");
+});
+$("#modal-local").addEventListener("click", async () => {
+  if (!state.modalItem) return;
+  await updateItem(state.modalItem.id, { syncExcluded: !state.modalItem.syncExcluded });
+  state.modalItem = (await getItems()).find(i => i.id === state.modalItem.id);
+  state.items = await getItems();
+  $("#modal-local").textContent = state.modalItem.syncExcluded ? "Allow sync" : "Local only";
+  render();
+  toast(state.modalItem.syncExcluded ? "Kept on this device" : "Sync allowed");
+});
 
 /* Header buttons */
 $("#btn-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
@@ -730,6 +877,53 @@ $("#btn-paste").addEventListener("click", async () => {
   } else {
     toast("Nothing on clipboard");
   }
+});
+
+function fillCollectionSelect(select, includeAll = false) {
+  const current = select.value;
+  select.innerHTML = "";
+  if (includeAll) select.add(new Option("All collections", "all"));
+  for (const c of state.collections) select.add(new Option(c.name, c.id));
+  if ([...select.options].some(o => o.value === current)) select.value = current;
+}
+
+function updateBulkCount() {
+  $("#bulk-count").textContent = `${state.selected.size} selected`;
+}
+
+$("#collection-filter").addEventListener("change", e => {
+  state.collectionFilter = e.target.value;
+  render();
+});
+$("#bulk-toggle").addEventListener("click", () => {
+  state.bulkMode = !state.bulkMode;
+  if (!state.bulkMode) state.selected.clear();
+  $("#bulk-toggle").textContent = state.bulkMode ? "Done" : "Select";
+  $("#bulk-bar").classList.toggle("hidden", !state.bulkMode);
+  updateBulkCount();
+  render();
+});
+$("#bulk-apply").addEventListener("click", async () => {
+  if (!state.selected.size) return;
+  const tags = $("#bulk-tags").value.split(",").map(t => t.trim()).filter(Boolean);
+  const collectionId = $("#bulk-collection").value || "inbox";
+  const collection = state.collections.find(c => c.id === collectionId);
+  const patch = {
+    collectionId,
+    collectionName: collection?.name || "Inbox",
+    collectionColor: collection?.color || "#8e8e93",
+  };
+  if (tags.length) patch.tags = [...new Set(tags)].slice(0, 20);
+  await updateItems([...state.selected], patch);
+  await refresh();
+  toast("Selection updated");
+});
+$("#bulk-delete").addEventListener("click", async () => {
+  if (!state.selected.size || !confirm(`Delete ${state.selected.size} selected item(s)?`)) return;
+  await removeItems([...state.selected]);
+  state.selected.clear();
+  await refresh();
+  updateBulkCount();
 });
 
 /* Search */
@@ -759,6 +953,8 @@ document.addEventListener("keydown", e => {
   }
   // Escape → close modal or clear search
   if (e.key === "Escape") {
+    if (!$("#signature-editor").classList.contains("hidden")) { closeSignatureEditor(); return; }
+    if (!$("#screenshot-editor").classList.contains("hidden")) { $("#screenshot-editor").classList.add("hidden"); return; }
     if (!modal.classList.contains("hidden")) { closeModal(); return; }
     if (document.activeElement === searchEl) {
       searchEl.value = "";
@@ -793,7 +989,23 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 async function refresh() {
   state.items = await getItems();
   state.settings = await getSettings();
+  state.collections = await getCollections();
+  const knownCollections = new Set(state.collections.map(c => c.id));
+  for (const item of state.items) {
+    if (item.collectionId && item.collectionName && !knownCollections.has(item.collectionId)) {
+      state.collections.push({
+        id: item.collectionId, name: item.collectionName,
+        color: item.collectionColor || "#8e8e93", createdAt: item.ts || 0,
+      });
+      knownCollections.add(item.collectionId);
+    }
+  }
+  state.syncStatus = (await chrome.storage.local.get("clipboard_sync_status")).clipboard_sync_status || null;
+  fillCollectionSelect($("#collection-filter"), true);
+  fillCollectionSelect($("#bulk-collection"), false);
+  $("#collection-filter").value = state.collectionFilter;
   applyTheme(state.settings.theme);
+  setStatus(statusFromLocalState(), statusKindFromLocalState());
   render();
 }
 
@@ -845,6 +1057,13 @@ async function init() {
   // "Test connection" — that is the single place sync health is
   // probed, and only on an explicit click.
   setStatus(statusFromLocalState(), statusKindFromLocalState());
+  const pending = (await chrome.storage.local.get("sensitive_capture_pending")).sensitive_capture_pending;
+  if (pending && Date.now() - pending.ts < 24 * 60 * 60 * 1000) {
+    const warning = $("#privacy-warning");
+    warning.textContent = "A sensitive copy was blocked because Vault was locked or not configured. Open Settings to protect future sensitive clips.";
+    warning.classList.remove("hidden");
+    warning.addEventListener("click", () => chrome.runtime.openOptionsPage(), { once: true });
+  }
   // Always pick up whatever is currently on the system clipboard — handles
   // copies from outside the browser, restricted pages (chrome://), or
   // anywhere our content script couldn't reach.
@@ -867,7 +1086,7 @@ async function captureCurrentClipboard(sourceLabel) {
           const blob = await ci.getType(imgType);
           const dataUrl = await blobToDataUrl(blob);
           const dim = await imgDim(dataUrl);
-          return await addItem({
+          return await storeManualCapture({
             kind: "image",
             dataUrl,
             width: dim.w,
@@ -879,11 +1098,27 @@ async function captureCurrentClipboard(sourceLabel) {
       }
       // No image — try the text path on the same ClipboardItem set.
       for (const ci of items) {
+        if ((ci.types || []).includes("text/html")) {
+          const htmlBlob = await ci.getType("text/html");
+          const plainBlob = (ci.types || []).includes("text/plain") ? await ci.getType("text/plain") : null;
+          const rawHtml = await htmlBlob.text();
+          const html = sanitizeRichHtml(rawHtml);
+          const text = plainBlob ? await plainBlob.text() : "";
+          if (html && text.trim()) {
+            const rows = tableRowsFromHtml(html);
+            return await storeManualCapture({
+              kind: rows.length ? "table" : "rich", text, html,
+              tableCsv: rows.length ? rowsToCsv(rows) : "",
+              tableMarkdown: rows.length ? rowsToMarkdown(rows) : "",
+              source: sourceLabel, ts: Date.now(),
+            });
+          }
+        }
         if ((ci.types || []).includes("text/plain")) {
           const blob = await ci.getType("text/plain");
           const txt = await blob.text();
           if (txt && txt.trim()) {
-            return await addItem({ kind: "text", text: txt, source: sourceLabel, ts: Date.now() });
+            return await storeManualCapture({ kind: "text", text: txt, source: sourceLabel, ts: Date.now() });
           }
         }
       }
@@ -893,11 +1128,290 @@ async function captureCurrentClipboard(sourceLabel) {
   try {
     const txt = await navigator.clipboard.readText();
     if (txt && txt.trim()) {
-      return await addItem({ kind: "text", text: txt, source: sourceLabel, ts: Date.now() });
+      return await storeManualCapture({ kind: "text", text: txt, source: sourceLabel, ts: Date.now() });
     }
   } catch {}
   return null;
 }
+
+async function storeManualCapture(payload) {
+  const result = await chrome.runtime.sendMessage({ type: "capture-manual", payload });
+  if (!result?.ok && result?.reason?.startsWith("vault_")) {
+    toast(result.reason === "vault_locked" ? "Vault is locked; sensitive clip blocked" : "Set up Vault to protect this clip");
+  }
+  return result?.saved || null;
+}
+
+async function addFiles(files) {
+  let saved = 0;
+  let rejected = 0;
+  for (const file of [...(files || [])]) {
+    try {
+      const dataUrl = await blobToDataUrl(file);
+      const item = await addItem({
+        kind: "file", text: file.name, dataUrl,
+        fileName: file.name, mimeType: file.type || "application/octet-stream",
+        fileSize: file.size, source: "manual", ts: Date.now(),
+        syncExcluded: true,
+      });
+      if (item) saved++; else rejected++;
+    } catch { rejected++; }
+  }
+  await refresh();
+  toast(rejected ? `Added ${saved}; ${rejected} too large` : `Added ${saved} file${saved === 1 ? "" : "s"}`);
+}
+
+$("#btn-file").addEventListener("click", () => $("#file-input").click());
+$("#file-input").addEventListener("change", e => {
+  addFiles(e.target.files);
+  e.target.value = "";
+});
+const appEl = $("#app");
+appEl.addEventListener("dragover", e => { e.preventDefault(); appEl.classList.add("drop-active"); });
+appEl.addEventListener("dragleave", e => { if (!appEl.contains(e.relatedTarget)) appEl.classList.remove("drop-active"); });
+appEl.addEventListener("drop", e => {
+  e.preventDefault();
+  appEl.classList.remove("drop-active");
+  if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+});
+
+const shot = {
+  image: null, mode: "crop", selection: null, dragStart: null,
+  paths: [], activePath: null, ocrText: "",
+};
+const shotCanvas = $("#shot-canvas");
+const shotCtx = shotCanvas.getContext("2d");
+
+function shotPoint(e) {
+  const r = shotCanvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(shotCanvas.width, (e.clientX - r.left) * shotCanvas.width / r.width)),
+    y: Math.max(0, Math.min(shotCanvas.height, (e.clientY - r.top) * shotCanvas.height / r.height)),
+  };
+}
+function renderShot() {
+  if (!shot.image) return;
+  shotCtx.clearRect(0, 0, shotCanvas.width, shotCanvas.height);
+  shotCtx.drawImage(shot.image, 0, 0);
+  shotCtx.strokeStyle = "#ff453a";
+  shotCtx.lineWidth = Math.max(4, shotCanvas.width / 300);
+  shotCtx.lineCap = "round";
+  for (const path of shot.paths) {
+    if (path.length < 2) continue;
+    shotCtx.beginPath();
+    shotCtx.moveTo(path[0].x, path[0].y);
+    for (const p of path.slice(1)) shotCtx.lineTo(p.x, p.y);
+    shotCtx.stroke();
+  }
+  if (shot.selection) {
+    const { x, y, w, h } = shot.selection;
+    shotCtx.fillStyle = "rgba(0,122,255,.16)";
+    shotCtx.strokeStyle = "#0a84ff";
+    shotCtx.lineWidth = Math.max(2, shotCanvas.width / 600);
+    shotCtx.fillRect(x, y, w, h);
+    shotCtx.strokeRect(x, y, w, h);
+  }
+}
+function setShotMode(mode) {
+  shot.mode = mode;
+  document.querySelectorAll("[data-shot-mode]").forEach(b => b.classList.toggle("active", b.dataset.shotMode === mode));
+}
+document.querySelectorAll("[data-shot-mode]").forEach(b => b.addEventListener("click", () => setShotMode(b.dataset.shotMode)));
+shotCanvas.addEventListener("pointerdown", e => {
+  shotCanvas.setPointerCapture(e.pointerId);
+  const p = shotPoint(e);
+  shot.dragStart = p;
+  if (shot.mode === "draw") {
+    shot.activePath = [p];
+    shot.paths.push(shot.activePath);
+  }
+});
+shotCanvas.addEventListener("pointermove", e => {
+  if (!shot.dragStart) return;
+  const p = shotPoint(e);
+  if (shot.mode === "draw") shot.activePath.push(p);
+  else {
+    shot.selection = {
+      x: Math.min(shot.dragStart.x, p.x), y: Math.min(shot.dragStart.y, p.y),
+      w: Math.abs(p.x - shot.dragStart.x), h: Math.abs(p.y - shot.dragStart.y),
+    };
+  }
+  renderShot();
+});
+shotCanvas.addEventListener("pointerup", () => { shot.dragStart = null; shot.activePath = null; });
+
+async function openScreenshotEditor(dataUrl) {
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = dataUrl;
+  });
+  shot.image = image; shot.selection = null; shot.paths = []; shot.ocrText = "";
+  shotCanvas.width = image.naturalWidth; shotCanvas.height = image.naturalHeight;
+  setShotMode("crop"); renderShot();
+  $("#shot-status").textContent = "Drag to select a region, or annotate before saving.";
+  $("#screenshot-editor").classList.remove("hidden");
+}
+$("#btn-screenshot").addEventListener("click", async () => {
+  toast("Capturing visible tab…");
+  const result = await chrome.runtime.sendMessage({ type: "capture-screenshot" });
+  if (!result?.ok || !result.dataUrl) return toast("Screenshot failed");
+  await openScreenshotEditor(result.dataUrl);
+});
+$("#shot-cancel").addEventListener("click", () => $("#screenshot-editor").classList.add("hidden"));
+$("#shot-reset").addEventListener("click", () => { shot.selection = null; shot.paths = []; shot.ocrText = ""; renderShot(); });
+$("#shot-ocr").addEventListener("click", async () => {
+  if (typeof TextDetector === "undefined") {
+    $("#shot-status").textContent = "OCR is not available in this Chrome build.";
+    return;
+  }
+  const selection = shot.selection;
+  try {
+    shot.selection = null; renderShot();
+    const blocks = await new TextDetector().detect(shotCanvas);
+    shot.ocrText = blocks.map(b => b.rawValue || "").filter(Boolean).join("\n");
+    $("#shot-status").textContent = shot.ocrText ? `Extracted ${shot.ocrText.length} characters.` : "No text detected.";
+  } catch { $("#shot-status").textContent = "Text extraction failed."; }
+  finally { shot.selection = selection; renderShot(); }
+});
+$("#shot-save").addEventListener("click", async () => {
+  const crop = shot.selection?.w > 8 && shot.selection?.h > 8
+    ? shot.selection : { x: 0, y: 0, w: shotCanvas.width, h: shotCanvas.height };
+  const selection = shot.selection; shot.selection = null; renderShot();
+  const out = document.createElement("canvas");
+  out.width = Math.round(crop.w); out.height = Math.round(crop.h);
+  out.getContext("2d").drawImage(shotCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, out.width, out.height);
+  shot.selection = selection;
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const saved = await addItem({
+    kind: "image", screenshot: true, dataUrl: out.toDataURL("image/png"),
+    width: out.width, height: out.height, text: shot.ocrText,
+    source: tabs[0]?.url ? new URL(tabs[0].url).hostname : "screenshot",
+    sourceUrl: tabs[0]?.url || "", sourceTitle: tabs[0]?.title || "",
+    ts: Date.now(), syncExcluded: true,
+  });
+  $("#screenshot-editor").classList.add("hidden");
+  await refresh();
+  toast(saved ? "Screenshot saved" : "Screenshot was too large to save");
+});
+
+const signatureCanvas = $("#signature-canvas");
+const signatureCtx = signatureCanvas.getContext("2d", { willReadFrequently: true });
+const signatureState = { drawing: false, dirty: false, last: null };
+
+function signaturePoint(e) {
+  const rect = signatureCanvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * signatureCanvas.width / rect.width,
+    y: (e.clientY - rect.top) * signatureCanvas.height / rect.height,
+  };
+}
+
+function clearSignature() {
+  signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+  signatureState.dirty = false;
+  signatureState.last = null;
+}
+
+function openSignatureEditor() {
+  clearSignature();
+  $("#signature-name").value = "My signature";
+  $("#signature-file").value = "";
+  $("#signature-editor").classList.remove("hidden");
+}
+
+function closeSignatureEditor() {
+  $("#signature-editor").classList.add("hidden");
+  signatureState.drawing = false;
+}
+
+signatureCanvas.addEventListener("pointerdown", e => {
+  if (e.button !== 0 && e.pointerType === "mouse") return;
+  signatureCanvas.setPointerCapture(e.pointerId);
+  signatureState.drawing = true;
+  signatureState.dirty = true;
+  signatureState.last = signaturePoint(e);
+  signatureCtx.fillStyle = $("#signature-color").value;
+  signatureCtx.beginPath();
+  signatureCtx.arc(signatureState.last.x, signatureState.last.y, 2.8, 0, Math.PI * 2);
+  signatureCtx.fill();
+});
+signatureCanvas.addEventListener("pointermove", e => {
+  if (!signatureState.drawing) return;
+  const point = signaturePoint(e);
+  signatureCtx.strokeStyle = $("#signature-color").value;
+  signatureCtx.lineWidth = 5.5;
+  signatureCtx.lineCap = "round";
+  signatureCtx.lineJoin = "round";
+  signatureCtx.beginPath();
+  signatureCtx.moveTo(signatureState.last.x, signatureState.last.y);
+  signatureCtx.lineTo(point.x, point.y);
+  signatureCtx.stroke();
+  signatureState.last = point;
+});
+function stopSignatureDrawing() {
+  signatureState.drawing = false;
+  signatureState.last = null;
+}
+signatureCanvas.addEventListener("pointerup", stopSignatureDrawing);
+signatureCanvas.addEventListener("pointercancel", stopSignatureDrawing);
+
+function trimmedSignatureCanvas() {
+  const { width, height } = signatureCanvas;
+  const pixels = signatureCtx.getImageData(0, 0, width, height).data;
+  const bounds = findAlphaBounds(pixels, width, height);
+  if (!bounds) return null;
+  const { left, right, top, bottom } = bounds;
+  const pad = 20;
+  const sx = Math.max(0, left - pad), sy = Math.max(0, top - pad);
+  const sw = Math.min(width - sx, right - left + 1 + pad * 2);
+  const sh = Math.min(height - sy, bottom - top + 1 + pad * 2);
+  const out = document.createElement("canvas");
+  out.width = sw; out.height = sh;
+  out.getContext("2d").drawImage(signatureCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  return out;
+}
+
+$("#btn-signature").addEventListener("click", openSignatureEditor);
+$("#signature-cancel").addEventListener("click", closeSignatureEditor);
+$("#signature-close").addEventListener("click", closeSignatureEditor);
+$("#signature-clear").addEventListener("click", clearSignature);
+$("#signature-file").addEventListener("change", async e => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
+    toast("Use a PNG, JPEG, or WebP image under 8 MB");
+    e.target.value = "";
+    return;
+  }
+  try {
+    const dataUrl = await blobToDataUrl(file);
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = dataUrl;
+    });
+    if (image.naturalWidth > 10000 || image.naturalHeight > 10000) throw new Error("image dimensions too large");
+    clearSignature();
+    const scale = Math.min(signatureCanvas.width / image.naturalWidth, signatureCanvas.height / image.naturalHeight);
+    const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+    signatureCtx.drawImage(image, (signatureCanvas.width - width) / 2, (signatureCanvas.height - height) / 2, width, height);
+    signatureState.dirty = true;
+  } catch { toast("Could not import signature image"); }
+});
+$("#signature-save").addEventListener("click", async () => {
+  const output = signatureState.dirty ? trimmedSignatureCanvas() : null;
+  if (!output) return toast("Draw or import a signature first");
+  const name = $("#signature-name").value.trim() || "My signature";
+  const saved = await addItem({
+    kind: "image", signature: true, text: name,
+    dataUrl: output.toDataURL("image/png"), width: output.width, height: output.height,
+    source: "signature", ts: Date.now(), pinned: true, syncExcluded: true,
+    collectionId: "signatures", collectionName: "Signatures", collectionColor: "#ff9f0a",
+    tags: ["signature"],
+  });
+  if (!saved) return toast("Signature was too large to save");
+  closeSignatureEditor();
+  const copied = await copyToClipboard(saved);
+  await refresh();
+  toast(copied ? "Signature saved and copied" : "Signature saved; copy failed");
+});
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {

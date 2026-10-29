@@ -24,7 +24,7 @@ let listeners = [];
 
 const state = {
   open: false,
-  target: null,           // the editable element we'll insert into
+  target: null,           // editable target, or null when opened as a command palette
   targetSelStart: null,   // saved selection in case the page steals focus
   targetSelEnd: null,
   items: [],              // text-only items
@@ -45,10 +45,15 @@ const TYPE_TAG_COLORS = {
 };
 
 let categorizeFn = null;
+let sanitizeRichFn = null;
 async function ensureCategorize() {
   if (!categorizeFn) {
-    const mod = await import(chrome.runtime.getURL("lib/categorize.js"));
-    categorizeFn = mod.categorize;
+    const [categorizeMod, richMod] = await Promise.all([
+      import(chrome.runtime.getURL("lib/categorize.js")),
+      import(chrome.runtime.getURL("lib/rich.js")),
+    ]);
+    categorizeFn = categorizeMod.categorize;
+    sanitizeRichFn = richMod.sanitizeRichHtml;
   }
   return categorizeFn;
 }
@@ -218,7 +223,7 @@ function buildShadow() {
     </div>
     <div class="list" role="listbox"></div>
     <div class="ftr">
-      <span><kbd>↑↓</kbd> nav · <kbd>↵</kbd> paste · <kbd>esc</kbd> close</span>
+      <span><kbd>↑↓</kbd> nav · <kbd>1-9</kbd> quick paste · <kbd>⇧↵</kbd> plain</span>
       <span class="count"></span>
     </div>
   `;
@@ -257,7 +262,7 @@ function applyFilter() {
   } else {
     const scored = [];
     for (const it of state.items) {
-      const m = fuzzyMatch(q, it.text || "");
+      const m = fuzzyMatch(q, `${it.text || ""} ${(it.tags || []).join(" ")} ${it.collectionName || ""} ${it.sourceTitle || ""}`);
       if (m.ok) scored.push({ it, score: m.score });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -327,27 +332,54 @@ function setSelected(idx, scroll = true) {
   }
 }
 
-function paste(idx = state.selectedIdx) {
+function copyTextFromPage(text, html = "") {
+  if (html && sanitizeRichFn) html = sanitizeRichFn(html);
+  if (html && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    const payload = {
+      "text/plain": new Blob([text], { type: "text/plain" }),
+      "text/html": new Blob([html], { type: "text/html" }),
+    };
+    return navigator.clipboard.write([new ClipboardItem(payload)]).catch(() => copyTextFromPage(text));
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  (document.body || document.documentElement).appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } finally { ta.remove(); }
+  return Promise.resolve();
+}
+
+function paste(idx = state.selectedIdx, plain = false) {
   if (idx < 0 || idx >= state.filtered.length) return;
   const item = state.filtered[idx];
   const target = state.target;
   // Close BEFORE focus restoration so the search input doesn't fight focus.
   closeInternal();
-  if (!target || !target.isConnected) return;
+  if (!target || !target.isConnected) {
+    copyTextFromPage(item.text || "", plain ? "" : (item.html || ""));
+    return;
+  }
   try {
     target.focus({ preventScroll: false });
     if (state.targetSelStart != null && typeof target.setSelectionRange === "function") {
       try { target.setSelectionRange(state.targetSelStart, state.targetSelEnd); } catch {}
     }
-    insertTextAtCursor(target, item.text || "");
+    insertItemAtCursor(target, item, plain);
   } catch { /* page may have removed the target */ }
 }
 
 // Robust insertion that works for React-controlled <input>/<textarea> and
 // for contenteditable.
-function insertTextAtCursor(el, text) {
+function insertItemAtCursor(el, item, plain = false) {
+  const text = item.text || "";
   if (!text) return;
   if (el.isContentEditable) {
+    if (!plain && item.html) {
+      const safeHtml = sanitizeRichFn ? sanitizeRichFn(item.html) : "";
+      const ok = safeHtml && document.execCommand("insertHTML", false, safeHtml);
+      if (ok) return;
+    }
     // execCommand is technically "deprecated" but still the most reliable
     // way to insert into contenteditable while firing input events.
     const ok = document.execCommand("insertText", false, text);
@@ -436,7 +468,7 @@ function onKeyDown(e) {
   if (e.key === "Enter") {
     e.preventDefault();
     e.stopPropagation();
-    paste();
+    paste(state.selectedIdx, e.shiftKey);
     return;
   }
   // 1–9 quick paste while search is empty
@@ -483,22 +515,22 @@ function listen(target, ev, fn, opts) {
 
 export function close() { closeInternal(); }
 
-export async function open(target) {
+export async function open(target = null) {
   if (state.open) return false;
-  if (!target || !target.isConnected) return false;
+  if (target && !target.isConnected) return false;
 
   if (!hudHost) buildShadow();
 
   // Snapshot the target's selection so we can restore even if the browser
   // briefly clears it when our search input takes focus.
   state.target = target;
-  state.targetSelStart = (typeof target.selectionStart === "number") ? target.selectionStart : null;
-  state.targetSelEnd = (typeof target.selectionEnd === "number") ? target.selectionEnd : null;
+  state.targetSelStart = (typeof target?.selectionStart === "number") ? target.selectionStart : null;
+  state.targetSelEnd = (typeof target?.selectionEnd === "number") ? target.selectionEnd : null;
 
   // Anchor in the same document the target lives in (handles iframes and
   // pages that swap document.body via SPA frameworks). Use documentElement
   // as a safer fallback if body hasn't rendered yet.
-  const ownerDoc = target.ownerDocument || document;
+  const ownerDoc = target?.ownerDocument || document;
   const container = ownerDoc.body || ownerDoc.documentElement;
   container.appendChild(hudHost);
 
@@ -510,8 +542,11 @@ export async function open(target) {
     const all = await storage.getItems();
     // The HUD only handles text. Images can't be pasted into a text field.
     // Vaulted items are skipped here; the popup is the place to unlock them.
+    const collections = await storage.getCollections();
+    const collectionNames = new Map(collections.map(c => [c.id, c.name]));
     items = all
-      .filter(i => i.kind === "text" && !i.vaulted)
+      .filter(i => ["text", "rich", "table"].includes(i.kind) && !i.vaulted)
+      .map(i => ({ ...i, collectionName: collectionNames.get(i.collectionId) || "Inbox" }))
       .sort((a, b) => {
         if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
         return (b.ts || 0) - (a.ts || 0);
@@ -524,7 +559,12 @@ export async function open(target) {
 
   state.open = true;
   renderList();
-  positionNear(target);
+  if (target) positionNear(target);
+  else {
+    const root = getRoot();
+    root.style.top = "12vh";
+    root.style.left = `max(8px, calc(50vw - ${HUD_W / 2}px))`;
+  }
   // After rendering the actual list, recompute height once
   requestAnimationFrame(reposition);
 

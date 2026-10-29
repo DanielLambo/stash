@@ -107,8 +107,12 @@ function looksLikeCode(text, lines) {
 
 export function categorize(item) {
   if (item.kind === "image") {
-    return { type: "image", label: "Image", icon: "image" };
+    const label = item.signature ? "Signature" : item.screenshot ? "Screenshot" : "Image";
+    return { type: "image", label, icon: "image" };
   }
+  if (item.kind === "file") return { type: "file", label: "File", icon: "file" };
+  if (item.kind === "table") return { type: "table", label: "Table", icon: "table" };
+  if (item.kind === "rich") return { type: "rich", label: "Rich text", icon: "text" };
   const text = (item.text || "").trim();
   if (!text) return { type: "text", label: "Text", icon: "text" };
 
@@ -160,7 +164,15 @@ export function timeAgo(ts) {
 }
 
 export function summarize(item, max = 120) {
-  if (item.kind === "image") return `Image · ${item.width || "?"}×${item.height || "?"}`;
+  if (item.kind === "image") {
+    if (item.signature) return item.text || "Saved signature";
+    return `${item.screenshot ? "Screenshot" : "Image"} · ${item.width || "?"}×${item.height || "?"}`;
+  }
+  if (item.kind === "file") return `${item.fileName || "File"} · ${item.mimeType || "unknown type"}`;
+  if (item.kind === "table") {
+    const rows = (item.tableCsv || "").split("\n").filter(Boolean).length;
+    return `Table · ${rows} row${rows === 1 ? "" : "s"} · ${(item.text || "").replace(/\s+/g, " ").slice(0, max)}`;
+  }
   const t = (item.text || "").replace(/\s+/g, " ").trim();
   return t.length > max ? t.slice(0, max) + "…" : t;
 }

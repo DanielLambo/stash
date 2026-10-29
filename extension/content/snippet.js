@@ -45,6 +45,7 @@
 //   {date:FORMAT}       — strftime-ish: YYYY MM DD HH mm ss + literal text
 //   {clipboard}         — current top clipboard text item (sync, from cache)
 //   {input:Label here}  — inline prompt for a value before expanding
+//   {var:Name}          — named variable prompt (alias for {input:Name})
 
 const PROMPT_TAG = "clipboard-snippet-prompt";
 
@@ -107,7 +108,7 @@ export function formatDate(fmt = "YYYY-MM-DD", now = new Date()) {
 // Returns array of { kind: "text"|"cursor"|"date"|"clipboard"|"input", value? }.
 export function parseBody(body) {
   const segs = [];
-  const re = /\{(cursor|date(?::[^{}]*)?|clipboard|input:[^{}]*)\}/g;
+  const re = /\{(cursor|date(?::[^{}]*)?|clipboard|(?:input|var):[^{}]*)\}/g;
   let last = 0;
   let m;
   while ((m = re.exec(body)) !== null) {
@@ -118,8 +119,8 @@ export function parseBody(body) {
     else if (tok.startsWith("date")) {
       const fmt = tok.includes(":") ? tok.slice(tok.indexOf(":") + 1) : "YYYY-MM-DD";
       segs.push({ kind: "date", value: fmt });
-    } else if (tok.startsWith("input:")) {
-      segs.push({ kind: "input", value: tok.slice("input:".length).trim() || "Value" });
+    } else if (tok.startsWith("input:") || tok.startsWith("var:")) {
+      segs.push({ kind: "input", value: tok.slice(tok.indexOf(":") + 1).trim() || "Value" });
     }
     last = m.index + m[0].length;
   }

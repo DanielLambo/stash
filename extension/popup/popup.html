@@ -29,6 +29,16 @@
         </div>
       </div>
       <div class="hdr-right">
+        <button class="icon-btn" id="btn-signature" title="Create a signature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18c3-1 4-7 6-10 1-2 3-3 3-1 0 3-5 9-3 10 2 1 4-4 5-3 1 0 0 3 2 3 1 0 2-1 3-2"/><path d="M4 21h16"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-screenshot" title="Capture visible tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-file" title="Add files">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </button>
+        <input id="file-input" type="file" multiple hidden />
         <button class="icon-btn" id="btn-paste" title="Capture current clipboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14M5 12h14"/>
@@ -42,6 +52,8 @@
         </button>
       </div>
     </header>
+
+    <div id="privacy-warning" class="privacy-warning hidden"></div>
 
     <!-- Search -->
     <div class="search-row">
@@ -64,6 +76,17 @@
       <button class="pill" data-filter="color">Colors</button>
       <button class="pill" data-filter="code">Code</button>
       <button class="pill" data-filter="pinned">Pinned</button>
+    </div>
+    <div class="organize-row">
+      <select id="collection-filter" aria-label="Filter by collection"></select>
+      <button class="btn ghost" id="bulk-toggle">Select</button>
+    </div>
+    <div id="bulk-bar" class="bulk-bar hidden">
+      <span id="bulk-count">0 selected</span>
+      <select id="bulk-collection" aria-label="Move selected clips"></select>
+      <input id="bulk-tags" placeholder="tag1, tag2" />
+      <button class="btn" id="bulk-apply">Apply</button>
+      <button class="btn danger" id="bulk-delete">Delete</button>
     </div>
 
     <!-- List -->
@@ -136,9 +159,56 @@
         <footer class="modal-ftr">
           <div class="modal-meta" id="modal-meta"></div>
           <div class="modal-actions">
+            <button class="btn" id="modal-csv">Copy CSV</button>
+            <button class="btn" id="modal-markdown">Copy Markdown</button>
+            <button class="btn" id="modal-plain">Copy plain</button>
+            <button class="btn" id="modal-local">Local only</button>
             <button class="btn" id="modal-edit">Edit</button>
             <button class="btn primary" id="modal-copy">Copy</button>
           </div>
+        </footer>
+      </div>
+    </div>
+
+    <div id="screenshot-editor" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card glass screenshot-card">
+        <header class="modal-hdr">
+          <div class="modal-type">Screenshot editor</div>
+          <button class="icon-btn" id="shot-cancel" title="Close">×</button>
+        </header>
+        <div class="shot-tools">
+          <button class="btn active" data-shot-mode="crop">Select region</button>
+          <button class="btn" data-shot-mode="draw">Annotate</button>
+          <button class="btn" id="shot-ocr">Extract text</button>
+        </div>
+        <div class="shot-stage"><canvas id="shot-canvas"></canvas></div>
+        <div id="shot-status" class="shot-status">Drag to select a region, or annotate before saving.</div>
+        <footer class="modal-ftr">
+          <button class="btn" id="shot-reset">Reset</button>
+          <button class="btn primary" id="shot-save">Save screenshot</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="signature-editor" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="signature-title">
+      <div class="modal-card glass signature-card">
+        <header class="modal-hdr">
+          <div class="modal-type" id="signature-title">Create signature</div>
+          <button class="icon-btn" id="signature-cancel" title="Close">×</button>
+        </header>
+        <div class="signature-form">
+          <input id="signature-name" class="signature-name" value="My signature" maxlength="60" aria-label="Signature name" />
+          <div class="signature-stage"><canvas id="signature-canvas" width="1000" height="300"></canvas></div>
+          <div class="signature-tools">
+            <label class="btn">Import image<input id="signature-file" type="file" accept="image/*" hidden /></label>
+            <label class="signature-color-label">Ink <input id="signature-color" type="color" value="#111111" /></label>
+            <button class="btn" id="signature-clear">Clear</button>
+          </div>
+          <div class="shot-status">Draw with your mouse, pen, or finger. Signatures stay local unless you explicitly allow sync.</div>
+        </div>
+        <footer class="modal-ftr">
+          <button class="btn" id="signature-close">Cancel</button>
+          <button class="btn primary" id="signature-save">Save &amp; copy</button>
         </footer>
       </div>
     </div>
