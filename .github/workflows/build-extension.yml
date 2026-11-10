@@ -1,0 +1,38 @@
+name: Build Chrome extension
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test extension logic
+        run: |
+          for test_file in tests/*.test.mjs; do
+            node "$test_file"
+          done
+
+      - name: Build Chrome Web Store package
+        run: bash scripts/build.sh
+
+      - name: Upload unpacked extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: stash-chrome-unpacked
+          path: extension/
+          if-no-files-found: error
+
+      - name: Upload Chrome Web Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: stash-chrome-web-store
+          path: dist/*.zip
+          if-no-files-found: error

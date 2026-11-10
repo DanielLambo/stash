@@ -171,6 +171,12 @@
     // the user did not initiate.
     if (!e || e.isTrusted === false) return;
     try {
+      // Do not inspect the field value. The hint only tells the service
+      // worker that text Chrome placed on this user-initiated copy event
+      // came from a password control and must be vaulted.
+      const copyTarget = e.target instanceof HTMLInputElement ? e.target : document.activeElement;
+      const sensitiveHint = copyTarget instanceof HTMLInputElement &&
+        (copyTarget.type || "").toLowerCase() === "password" ? "password" : "";
       const dataUrl = await tryExtractImage(e);
       if (dataUrl) {
         const { w, h } = await imageDimensions(dataUrl);
@@ -187,6 +193,7 @@
         sourceTitle: document.title || "",
         capturedAt: Date.now(),
         ts: Date.now(),
+        sensitiveHint,
       };
       if (html) {
         try {

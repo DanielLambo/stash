@@ -1,0 +1,3 @@
+Choose this `extension` folder in Chrome's “Load unpacked” dialog.
+
+The manifest.json file beside this note is the extension manifest Chrome needs.

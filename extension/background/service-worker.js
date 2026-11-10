@@ -83,7 +83,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           payload = { ...payload, sourceUrl: "", sourceTitle: "" };
         }
         if (settings.autoVault && !["image", "file"].includes(payload.kind)) {
-          const det = detectSensitive(payload.text || "");
+          const det = payload.sensitiveHint === "password"
+            ? { sensitive: true, kind: "password", confidence: 1 }
+            : detectSensitive(payload.text || "");
+          // This capture-only hint is never persisted or synced.
+          if (Object.prototype.hasOwnProperty.call(payload, "sensitiveHint")) {
+            const { sensitiveHint: _sensitiveHint, ...cleanPayload } = payload;
+            payload = cleanPayload;
+          }
           if (det.sensitive) {
             // POLICY: a sensitive item never lands in chrome.storage as
             // plaintext. We refuse to store it unless the Vault is set

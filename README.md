@@ -27,6 +27,8 @@ browsers and machines.
   Links / Images / Code / Pinned.
 - **Privacy-first** — capture pause, per-domain blocklist, optional sync.
   Sync token is opaque and per-device.
+- **Auto-blurred secrets** — password-field copies and detected secrets are
+  encrypted in the Vault and stay masked until you reveal an individual card.
 - **Cross-device sync** — Node + Express + SQLite (WAL) backend.
 - **Command palette** — press Cmd/Ctrl+Shift+V on any webpage, search with the
   keyboard, and paste with Enter or the 1–9 keys. Rich text is preserved in
@@ -79,9 +81,15 @@ clipboard_project/
 
 ## Install the extension
 
+The easiest download is the **stash-chrome-unpacked** artifact from the latest
+successful run under the repository's **Actions** tab. Extract that artifact
+once; its extracted folder contains `manifest.json` directly.
+
 1. Open `chrome://extensions` (or Edge / Brave equivalent).
 2. Toggle **Developer mode** on (top right).
-3. Click **Load unpacked** and select `clipboard_project/extension/`.
+3. Click **Load unpacked** and select the extracted `stash-main/extension/`
+   folder—the folder that directly contains `manifest.json`. Selecting
+   `stash-main/` produces Chrome's “Manifest file is missing” error.
 4. Pin the extension to your toolbar.
 5. Press `Option + Shift + V` (`Alt + Shift + V` on Win/Linux) to open it any time.
 

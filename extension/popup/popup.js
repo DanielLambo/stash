@@ -13,7 +13,7 @@ import {
   isUnlocked as vaultIsUnlocked,
   unlockVault, lockVault, decryptItem, setupVault,
 } from "../lib/crypto.js";
-import { describeKind } from "../lib/sensitive.js";
+import { describeKind, shouldMaskVaultedItem } from "../lib/sensitive.js";
 import { sanitizeRichHtml, tableRowsFromHtml, rowsToCsv, rowsToMarkdown } from "../lib/rich.js";
 import { findAlphaBounds } from "../lib/image.js";
 
@@ -38,6 +38,8 @@ let state = {
   // id → decrypted plaintext, populated after a successful unlock so we
   // don't decrypt on every render
   decrypted: new Map(),
+  // Explicit per-popup reveals. Closing the popup clears this set.
+  revealed: new Set(),
   collections: [],
   collectionFilter: "all",
   bulkMode: false,
@@ -59,6 +61,8 @@ const ICONS = {
   open: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
   lock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`,
   unlock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>`,
+  eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  eyeOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a18 18 0 0 1-2.1 3.2M6.6 6.6C3.6 8.5 2 12 2 12s3.5 8 10 8a9.8 9.8 0 0 0 4.1-.9"/></svg>`,
 };
 
 function applyTheme(theme) {
@@ -201,14 +205,16 @@ function renderCard(item, index) {
     card.appendChild(check);
   }
 
-  // Vault treatment — only items that are actually encrypted (have
-  // ciphertext on disk) get blurred until the user unlocks. A
-  // `sensitive` flag without `vaulted` means the item is stored as
-  // plaintext and there is nothing to "reveal" — blurring it would
-  // just hide its text needlessly. (Older builds set sensitive:true on
-  // plaintext items; the migration in init() clears those flags.)
+  // Vault treatment. Encrypted items stay masked even while their plaintext
+  // is cached in memory, unless auto-blur is disabled or this card was
+  // explicitly revealed during the current popup session.
   const isVaulted = !!item.vaulted;
-  const isHidden = isVaulted && !state.decrypted.has(item.id);
+  const isHidden = shouldMaskVaultedItem(
+    item,
+    state.decrypted.has(item.id),
+    state.revealed.has(item.id),
+    state.settings?.autoBlurSensitive,
+  );
   if (isVaulted) card.classList.add("vaulted");
   if (isHidden) card.classList.add("hidden-content");
 
@@ -331,6 +337,28 @@ function renderCard(item, index) {
     e.stopPropagation();
     openModal(item);
   }));
+  if (item.vaulted) {
+    const revealed = state.revealed.has(item.id);
+    actions.appendChild(actionBtn(revealed ? ICONS.eyeOff : ICONS.eye, revealed ? "Hide" : "Reveal", async e => {
+      e.stopPropagation();
+      if (revealed) {
+        state.revealed.delete(item.id);
+        render();
+        return;
+      }
+      if (!(await ensureVaultUnlocked())) return;
+      if (!state.decrypted.has(item.id)) {
+        try {
+          state.decrypted.set(item.id, await decryptItem(item));
+        } catch {
+          toast("Decrypt failed");
+          return;
+        }
+      }
+      state.revealed.add(item.id);
+      render();
+    }));
+  }
   actions.appendChild(actionBtn(ICONS.trash, "Delete", async e => {
     e.stopPropagation();
     card.classList.add("card-leaving");
@@ -623,7 +651,12 @@ async function dataUrlToPngBlob(dataUrl) {
 function openModal(item) {
   state.modalItem = item;
   state.modalEditing = false;
-  const vaultLocked = item.vaulted && !state.decrypted.has(item.id);
+  const vaultLocked = shouldMaskVaultedItem(
+    item,
+    state.decrypted.has(item.id),
+    state.revealed.has(item.id),
+    state.settings?.autoBlurSensitive,
+  );
   const cat = categorizeForDisplay(item);
   const dotColors = {
     text: "var(--type-text)", link: "var(--type-link)", email: "var(--type-email)",
@@ -651,10 +684,15 @@ function renderModalBody(item, _cat) {
   const body = $("#modal-body");
   body.innerHTML = "";
 
-  if (item.vaulted && !state.decrypted.has(item.id)) {
+  if (shouldMaskVaultedItem(
+    item,
+    state.decrypted.has(item.id),
+    state.revealed.has(item.id),
+    state.settings?.autoBlurSensitive,
+  )) {
     const p = document.createElement("p");
     p.className = "vault-modal-hint";
-    p.textContent = "This item is protected. Click the card and enter your vault password to decrypt and copy.";
+    p.textContent = "This item is protected. Use the eye button on its card to reveal it, or click the card to copy it without revealing.";
     body.appendChild(p);
     return;
   }

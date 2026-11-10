@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = {
   // Auto-vault is on by default *behaviorally* (the detector still runs),
   // but no encryption happens until the user sets a master password.
   autoVault: true,
+  // Keep decrypted Vault cards masked until the user explicitly reveals one.
+  autoBlurSensitive: true,
   retentionDays: 0,                  // 0 = keep until history cap / manual deletion
   captureRichText: true,
   capturePageContext: true,

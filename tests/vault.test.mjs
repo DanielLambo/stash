@@ -5,7 +5,7 @@
 // (For Node 18, we'd need `import { webcrypto } from 'node:crypto'`.)
 
 import {
-  detectSensitive, luhnValid, entropy, describeKind,
+  detectSensitive, luhnValid, entropy, describeKind, shouldMaskVaultedItem,
 } from "../extension/lib/sensitive.js";
 import {
   encryptString, decryptString, _testRoundtrip,
@@ -18,6 +18,23 @@ async function t(name, fn) {
   try { await fn(); pass++; console.log(`  ✓ ${name}`); }
   catch (e) { fail++; console.log(`  ✗ ${name}\n     ${e.message}`); }
 }
+
+console.log("Vault masking:");
+await t("non-vaulted clips are never masked", () => {
+  assert.equal(shouldMaskVaultedItem({ vaulted: false }, false, false, true), false);
+});
+await t("locked vaulted clips stay masked", () => {
+  assert.equal(shouldMaskVaultedItem({ vaulted: true }, false, false, true), true);
+});
+await t("decrypted vaulted clips remain masked by default", () => {
+  assert.equal(shouldMaskVaultedItem({ vaulted: true }, true, false, true), true);
+});
+await t("an explicit reveal unmasks the clip", () => {
+  assert.equal(shouldMaskVaultedItem({ vaulted: true }, true, true, true), false);
+});
+await t("disabling auto-blur shows decrypted clips", () => {
+  assert.equal(shouldMaskVaultedItem({ vaulted: true }, true, false, false), false);
+});
 
 console.log("luhnValid:");
 await t("VISA test number passes Luhn", () => assert.equal(luhnValid("4111 1111 1111 1111"), true));

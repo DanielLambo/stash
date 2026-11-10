@@ -180,6 +180,15 @@ export function describeKind(kind) {
     "ssn":                "SSN",
     "credit-card":        "Credit card",
     "labelled-secret":    "Password / token",
+    "password":           "Password",
     "high-entropy":       "High-entropy secret",
   })[kind] || "Sensitive";
+}
+
+// Vault plaintext may be cached in memory after unlock so copying stays fast.
+// That must not imply that it is safe to render on screen.
+export function shouldMaskVaultedItem(item, hasPlaintext, isRevealed, autoBlur = true) {
+  if (!item?.vaulted) return false;
+  if (!hasPlaintext) return true;
+  return autoBlur !== false && !isRevealed;
 }

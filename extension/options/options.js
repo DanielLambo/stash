@@ -46,6 +46,7 @@ async function load() {
   $("#maxLabel").textContent = settings.maxItems;
   $("#snippetsEnabled").checked = settings.snippetsEnabled !== false;
   $("#autoVault").checked = settings.autoVault !== false;
+  $("#autoBlurSensitive").checked = settings.autoBlurSensitive !== false;
   document.querySelectorAll("#theme button").forEach(b => {
     b.classList.toggle("active", b.dataset.value === settings.theme);
   });
@@ -196,6 +197,7 @@ $("#clearAllBtn").addEventListener("click", async () => {
 
 /* Vault */
 $("#autoVault").addEventListener("change", e => update({ autoVault: e.target.checked }));
+$("#autoBlurSensitive").addEventListener("change", e => update({ autoBlurSensitive: e.target.checked }));
 
 // Vault setup uses a styled in-page overlay rather than `window.prompt`.
 // Both inputs are `type=password` so the OS / password manager treats

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Stash — Smart Clipboard for Power Users",
   "short_name": "Stash",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Clipboard command palette, rich capture, collections, snippets, screenshots, and encrypted optional sync.",
   "homepage_url": "https://github.com/daniellambo/stash",
   "permissions": [
